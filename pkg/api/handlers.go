@@ -10,15 +10,31 @@ import (
 	"ksight/pkg/service/scheduler"
 )
 
+type clusterService interface {
+	AddCluster(name, kubeconfig, context string) (string, error)
+	RemoveCluster(clusterID string) error
+	GetClusters() map[string]service.ClusterInfo
+	AddResourceWatcher(request service.ResourceWatchRequest) error
+	RemoveResourceWatcher(request service.ResourceWatchRequest) error
+	LoadInitialData(clusterID string, group, version, resource string) ([]map[string]any, string, error)
+	LoadKubeconfigFromFile(filePath string) (string, error)
+}
+
+type schedulerAggregator interface {
+	StartAggregation(request scheduler.SchedulerAggregationRequest) error
+	StopAggregation(clusterID string) error
+	GetSnapshot(clusterID string) (*scheduler.SchedulerSnapshot, error)
+}
+
 // Handler holds dependencies for HTTP handlers
 type Handler struct {
-	clusterService      *service.ClusterService
-	schedulerAggregator *scheduler.Aggregator
+	clusterService      clusterService
+	schedulerAggregator schedulerAggregator
 	wsHub               *WebSocketHub
 }
 
 // NewHandler creates a new API handler
-func NewHandler(cs *service.ClusterService, sa *scheduler.Aggregator, hub *WebSocketHub) *Handler {
+func NewHandler(cs clusterService, sa schedulerAggregator, hub *WebSocketHub) *Handler {
 	return &Handler{
 		clusterService:      cs,
 		schedulerAggregator: sa,

@@ -1,6 +1,8 @@
 node_modules
 frontend/dist
 build/bin
+server
+server.exe
 
 # Generated files
 frontend/src/auto-imports.d.ts
@@ -15,3 +17,13 @@ test-results
 test.test
 benchmark-results
 bin
+
+# Cache
+.cache/
+
+# Local config
+.mcp.json
+
+# Local notes
+agents.md
+wiki/

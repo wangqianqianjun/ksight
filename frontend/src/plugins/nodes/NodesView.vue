@@ -117,7 +117,7 @@
                   </TableCell>
                   <TableCell>{{ node.roles || '-' }}</TableCell>
                   <TableCell>{{ node.version || '-' }}</TableCell>
-                  <TableCell>{{ node.age || '-' }}</TableCell>
+                  <TableCell>{{ formatAge(node.age) }}</TableCell>
                   <TableCell>
                     <div class="flex items-center gap-1">
                       <Button variant="ghost" size="sm" title="Shell">
@@ -208,5 +208,22 @@ watch(() => clusterStore.activeClusterId, async (newClusterId) => {
 
 function connectCluster() {
   openClusterDialog()
+}
+
+function formatAge(timestamp?: string): string {
+  if (!timestamp) return '-'
+
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (diffDay > 0) return `${diffDay}d`
+  if (diffHour > 0) return `${diffHour}h`
+  if (diffMin > 0) return `${diffMin}m`
+  return `${diffSec}s`
 }
 </script>

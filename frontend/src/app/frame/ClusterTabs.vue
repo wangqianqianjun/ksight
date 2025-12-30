@@ -26,13 +26,13 @@
       
       <!-- Cluster Icon -->
       <Server 
-        :size="16" 
+        :size="18" 
         class="mr-3 flex-shrink-0 transition-colors duration-200" 
         :class="tab.active ? 'text-blue-600 dark:text-blue-400' : ''"
       />
       
       <!-- Cluster Name -->
-      <span class="text-sm font-medium truncate max-w-32 transition-colors duration-200">
+      <span class="text-base font-medium truncate max-w-40 transition-colors duration-200">
         {{ tab.title }}
       </span>
       
@@ -110,8 +110,8 @@ const addTab = () => {
 
 <style scoped>
 .cluster-tab {
-  min-width: 140px;
-  max-width: 220px;
+  min-width: 160px;
+  max-width: 240px;
   position: relative;
 }
 

@@ -148,6 +148,8 @@ export namespace scheduler {
 	    claims: ClaimRow[];
 	    slices: SliceRow[];
 	    stats?: Record<string, number>;
+	    status?: string;
+	    message?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new DRASnapshot(source);
@@ -158,6 +160,8 @@ export namespace scheduler {
 	        this.claims = this.convertValues(source["claims"], ClaimRow);
 	        this.slices = this.convertValues(source["slices"], SliceRow);
 	        this.stats = source["stats"];
+	        this.status = source["status"];
+	        this.message = source["message"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -449,6 +453,7 @@ export namespace scheduler {
 	    pods: PendingPodRow[];
 	    byScheduler: Record<string, number>;
 	    reasons?: ReasonBucket[];
+	    eventsAvailable: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new PendingViewSnapshot(source);
@@ -459,6 +464,7 @@ export namespace scheduler {
 	        this.pods = this.convertValues(source["pods"], PendingPodRow);
 	        this.byScheduler = source["byScheduler"];
 	        this.reasons = this.convertValues(source["reasons"], ReasonBucket);
+	        this.eventsAvailable = source["eventsAvailable"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

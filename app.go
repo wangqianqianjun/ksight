@@ -82,6 +82,10 @@ func (a *clusterClientAdapter) RemoveResourceWatcher(clusterID string, gvr schem
 	})
 }
 
+func (a *clusterClientAdapter) LoadInitialData(clusterID string, gvr schema.GroupVersionResource) ([]map[string]any, string, error) {
+	return a.cs.LoadInitialData(clusterID, gvr.Group, gvr.Version, gvr.Resource)
+}
+
 // Greet returns a greeting for the given name
 func (a *App) Greet(name string) string {
 	return fmt.Sprintf("Hello %s, It's show time!", name)

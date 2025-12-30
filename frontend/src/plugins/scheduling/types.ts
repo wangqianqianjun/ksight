@@ -111,6 +111,7 @@ export interface PendingViewSnapshot {
   pods: PendingPodRow[]
   byScheduler: Record<string, number>
   reasons?: ReasonBucket[]
+  eventsAvailable?: boolean
 }
 
 export interface PendingPodRow {
@@ -141,6 +142,8 @@ export interface DRASnapshot {
   claims: ClaimRow[]
   slices: SliceRow[]
   stats?: Record<string, number>
+  status?: 'available' | 'not_available'
+  message?: string
 }
 
 export interface ClaimRow {

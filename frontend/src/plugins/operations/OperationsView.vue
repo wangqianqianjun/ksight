@@ -8,11 +8,11 @@
           <h1 class="text-xl font-semibold">Operations</h1>
         </div>
         <div class="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled>
+          <Button variant="outline" size="sm" :disabled="!isConnected">
             <Filter class="w-4 h-4 mr-2" />
             Filters
           </Button>
-          <Button size="sm" disabled>
+          <Button size="sm" :disabled="!isConnected">
             <Plus class="w-4 h-4 mr-2" />
             New Operation
           </Button>

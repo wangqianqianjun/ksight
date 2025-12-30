@@ -1,3 +1,4 @@
+import { ref } from 'vue'
 import { defineStore } from 'pinia'
 import { k8s, wsManager } from '@/lib/k8s-sdk'
 import type {
@@ -15,6 +16,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   const lastSeq = ref<number>(0)
   const isAggregating = ref(false)
   const error = ref<string | null>(null)
+  const mockMode = ref(false)
 
   // Event unsubscribe functions
   let unsubSnapshot: (() => void) | null = null
@@ -23,6 +25,10 @@ export const useSchedulerStore = defineStore('scheduler', () => {
 
   // Actions
   async function startAggregation(request: SchedulerAggregationRequest) {
+    if (mockMode.value) {
+      return
+    }
+
     if (isAggregating.value && clusterId.value === request.clusterId) {
       return // Already aggregating for this cluster
     }
@@ -40,8 +46,20 @@ export const useSchedulerStore = defineStore('scheduler', () => {
       subscribeToEvents()
 
       // Start backend aggregation via HTTP API
-      await k8s.startSchedulerAggregation(request)
+      try {
+        await k8s.startSchedulerAggregation(request)
+      } catch (e) {
+        // Ignore "already running" error - just fetch snapshot instead
+        const msg = e instanceof Error ? e.message : String(e)
+        if (!msg.includes('already running')) {
+          throw e
+        }
+      }
+
       isAggregating.value = true
+
+      // Fetch initial snapshot
+      await refreshSnapshot()
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
       unsubscribeFromEvents()
@@ -50,6 +68,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   }
 
   async function stopAggregation() {
+    if (mockMode.value) return
     if (!clusterId.value) return
 
     try {
@@ -65,6 +84,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   }
 
   async function refreshSnapshot() {
+    if (mockMode.value) return
     if (!clusterId.value) return
 
     try {
@@ -123,8 +143,9 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     if (!snapshot.value) return
 
     // Apply node view delta
-    if (delta.nodeView) {
+    if (delta.nodeView && snapshot.value.nodeView) {
       const nodeView = snapshot.value.nodeView
+      if (!nodeView.nodes) nodeView.nodes = []
 
       // Remove nodes
       if (delta.nodeView.remove) {
@@ -151,8 +172,9 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     }
 
     // Apply pending view delta
-    if (delta.pendingView) {
+    if (delta.pendingView && snapshot.value.pendingView) {
       const pendingView = snapshot.value.pendingView
+      if (!pendingView.pods) pendingView.pods = []
 
       // Remove pods
       if (delta.pendingView.remove) {
@@ -186,8 +208,10 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     }
 
     // Apply DRA view delta
-    if (delta.draView) {
+    if (delta.draView && snapshot.value.draView) {
       const draView = snapshot.value.draView
+      if (!draView.claims) draView.claims = []
+      if (!draView.slices) draView.slices = []
 
       // Claims
       if (delta.draView.removeClaims) {
@@ -232,7 +256,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     }
 
     // Apply migration view delta
-    if (delta.migrationView) {
+    if (delta.migrationView && snapshot.value.migrationView) {
       const migrationView = snapshot.value.migrationView
 
       if (delta.migrationView.usedByStats) {
@@ -247,13 +271,31 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     }
 
     // Update health
-    snapshot.value.health.totalPending = snapshot.value.pendingView.pods.length
-    snapshot.value.health.totalNodes = snapshot.value.nodeView.nodes.length
-    snapshot.value.health.totalGpus = snapshot.value.nodeView.summary.totalGpus
+    if (snapshot.value.health && snapshot.value.pendingView?.pods && snapshot.value.nodeView?.nodes && snapshot.value.nodeView?.summary) {
+      snapshot.value.health.totalPending = snapshot.value.pendingView.pods.length
+      snapshot.value.health.totalNodes = snapshot.value.nodeView.nodes.length
+      snapshot.value.health.totalGpus = snapshot.value.nodeView.summary.totalGpus
+    }
   }
 
   function clearWarnings() {
     warnings.value = []
+  }
+
+  function setMockSnapshot(mockSnapshot: SchedulerSnapshot, mockWarnings: SchedulerWarning[] = []) {
+    mockMode.value = true
+    snapshot.value = mockSnapshot
+    warnings.value = mockWarnings
+    lastSeq.value = mockSnapshot.seq
+    isAggregating.value = false
+    error.value = null
+  }
+
+  function clearMockSnapshot() {
+    mockMode.value = false
+    warnings.value = []
+    snapshot.value = null
+    lastSeq.value = 0
   }
 
   function setClusterId(id: string) {
@@ -268,12 +310,15 @@ export const useSchedulerStore = defineStore('scheduler', () => {
     lastSeq,
     isAggregating,
     error,
+    mockMode,
 
     // Actions
     startAggregation,
     stopAggregation,
     refreshSnapshot,
     clearWarnings,
+    setMockSnapshot,
+    clearMockSnapshot,
     setClusterId
   }
 })

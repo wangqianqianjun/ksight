@@ -1,5 +1,13 @@
 <template>
   <div class="space-y-4">
+    <Alert v-if="conflicts.length > 0" variant="destructive">
+      <AlertTriangle class="w-4 h-4" />
+      <AlertTitle>GPU usage conflicts detected</AlertTitle>
+      <AlertDescription>
+        {{ conflicts.length }} conflict{{ conflicts.length > 1 ? 's' : '' }} require attention.
+      </AlertDescription>
+    </Alert>
+
     <!-- Migration Mode Banner -->
     <Card :class="data?.progressiveMigration ? 'border-blue-500' : 'border-green-500'">
       <CardContent class="pt-4">
@@ -26,7 +34,7 @@
     </Card>
 
     <!-- GPU Distribution -->
-    <div class="grid grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <Card>
         <CardHeader>
           <CardTitle class="flex items-center gap-2">
@@ -117,7 +125,12 @@
             </TableRow>
           </TableHeader>
           <TableBody>
-            <TableRow v-for="conflict in conflicts" :key="`${conflict.node}-${conflict.pod?.namespace}/${conflict.pod?.name}`">
+            <TableRow
+              v-for="conflict in conflicts"
+              :key="`${conflict.node}-${conflict.pod?.namespace}/${conflict.pod?.name}`"
+              class="cursor-pointer"
+              @click="openConflictDetails(conflict)"
+            >
               <TableCell class="font-medium">{{ conflict.node }}</TableCell>
               <TableCell>
                 <div>{{ conflict.pod?.name }}</div>
@@ -150,21 +163,63 @@
         </div>
       </CardContent>
     </Card>
+
+    <Sheet :open="showDetails" @update:open="showDetails = $event">
+      <SheetContent side="right" class="w-[380px] sm:w-[520px]">
+        <SheetHeader>
+          <SheetTitle>Conflict Details</SheetTitle>
+          <SheetDescription>
+            GPU resource mismatches for this pod.
+          </SheetDescription>
+        </SheetHeader>
+        <div v-if="selectedConflict" class="mt-4 space-y-3 text-sm">
+          <div>
+            <div class="text-muted-foreground">Pod</div>
+            <div class="font-medium">
+              {{ selectedConflict.pod?.namespace }}/{{ selectedConflict.pod?.name }}
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <div class="text-muted-foreground">Node</div>
+              <div>{{ selectedConflict.node }}</div>
+            </div>
+            <div>
+              <div class="text-muted-foreground">Resource Type</div>
+              <div>{{ selectedConflict.resourceType }}</div>
+            </div>
+            <div>
+              <div class="text-muted-foreground">Expected UsedBy</div>
+              <div>{{ getExpectedDriver(selectedConflict.resourceType) }}</div>
+            </div>
+            <div>
+              <div class="text-muted-foreground">Actual UsedBy</div>
+              <div class="text-destructive">{{ selectedConflict.usedBy }}</div>
+            </div>
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { GitMerge, PieChart, BarChart, AlertTriangle, CheckCircle } from 'lucide-vue-next'
-import type { MigrationSnapshot } from '../types'
+import type { ConflictRow, MigrationSnapshot } from '../types'
 import { UsedByTensorFusion, UsedByNvidiaDevicePlugin } from '../types'
 
 const props = defineProps<{
   data: MigrationSnapshot
 }>()
+
+const selectedConflict = ref<ConflictRow | null>(null)
+const showDetails = ref(false)
 
 // Computed properties for null safety
 const usedByStats = computed(() => props.data?.usedByStats ?? {})
@@ -173,6 +228,11 @@ const conflicts = computed(() => props.data?.conflicts ?? [])
 const totalGPUs = computed(() => {
   return Object.values(usedByStats.value).reduce((sum, count) => sum + count, 0)
 })
+
+function openConflictDetails(conflict: ConflictRow) {
+  selectedConflict.value = conflict
+  showDetails.value = true
+}
 
 function getPercentage(count: number): number {
   if (totalGPUs.value === 0) return 0

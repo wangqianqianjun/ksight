@@ -130,9 +130,10 @@ type NodeViewDelta struct {
 
 // PendingViewSnapshot represents full pending pod view state
 type PendingViewSnapshot struct {
-	Pods        []PendingPodRow  `json:"pods"`
-	ByScheduler map[string]int   `json:"byScheduler"`
-	Reasons     []ReasonBucket   `json:"reasons,omitempty"`
+	Pods            []PendingPodRow `json:"pods"`
+	ByScheduler     map[string]int  `json:"byScheduler"`
+	Reasons         []ReasonBucket  `json:"reasons,omitempty"`
+	EventsAvailable bool            `json:"eventsAvailable"` // whether events API is available
 }
 
 // PendingPodRow represents a pending pod
@@ -164,9 +165,11 @@ type PendingDelta struct {
 
 // DRASnapshot represents full DRA allocation view state
 type DRASnapshot struct {
-	Claims []ClaimRow     `json:"claims"`
-	Slices []SliceRow     `json:"slices"`
-	Stats  map[string]int `json:"stats,omitempty"` // allocated/unallocated/pending counts
+	Claims  []ClaimRow     `json:"claims"`
+	Slices  []SliceRow     `json:"slices"`
+	Stats   map[string]int `json:"stats,omitempty"`   // allocated/unallocated/pending counts
+	Status  string         `json:"status,omitempty"`  // "available" or "not_available"
+	Message string         `json:"message,omitempty"` // status message for UI display
 }
 
 // ClaimRow represents a ResourceClaim
@@ -264,6 +267,9 @@ const (
 	GPUNodeClaimsGVR         = "tensor-fusion.ai/v1/gpunodeclaims"
 	TensorFusionWorkloadsGVR = "tensor-fusion.ai/v1/tensorfusionworkloads"
 	TensorFusionClustersGVR  = "tensor-fusion.ai/v1/tensorfusionclusters"
+
+	// Deployments (used for TF controller env inspection)
+	DeploymentsGVR = "apps/v1/deployments"
 )
 
 // TensorFusion annotations

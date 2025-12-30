@@ -174,3 +174,7 @@ func (a *clusterClientAdapter) RemoveResourceWatcher(clusterID string, gvr schem
 		Resource:  gvr.Resource,
 	})
 }
+
+func (a *clusterClientAdapter) LoadInitialData(clusterID string, gvr schema.GroupVersionResource) ([]map[string]any, string, error) {
+	return a.cs.LoadInitialData(clusterID, gvr.Group, gvr.Version, gvr.Resource)
+}

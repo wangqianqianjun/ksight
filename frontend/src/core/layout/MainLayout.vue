@@ -1,23 +1,26 @@
 <template>
-  <div class="h-screen flex flex-col bg-background">
-    <!-- Custom Title Bar (includes Cluster Tabs) -->
-    <TitleBar />
+  <div class="h-screen flex bg-background">
+    <!-- Left: Sidebar (full height) -->
+    <Sidebar class="w-20 flex-shrink-0" />
 
-    <div class="flex-1 flex overflow-hidden">
-      <!-- Left: Sidebar -->
-      <Sidebar class="w-12" />
+    <!-- Right: Title Bar + Main Content -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <!-- Custom Title Bar (includes Cluster Tabs) -->
+      <TitleBar />
 
       <!-- Main Content Area -->
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <router-view />
+      <div class="flex-1 flex overflow-hidden">
+        <div class="flex-1 flex flex-col overflow-hidden px-6 pt-2">
+          <router-view />
+        </div>
+
+        <!-- Right: AI Chat (collapsible) -->
+        <ChatPanel v-if="showChat" class="w-80 flex-shrink-0" />
       </div>
 
-      <!-- Right: AI Chat (collapsible) -->
-      <ChatPanel v-if="showChat" class="w-80" />
+      <!-- Bottom: Command Tabs -->
+      <CommandTabs v-if="showCommandTabs" class="h-64" />
     </div>
-
-    <!-- Bottom: Command Tabs -->
-    <CommandTabs v-if="showCommandTabs" class="h-64" />
 
     <!-- Cluster Connection Dialog -->
     <ClusterConnectionDialog />

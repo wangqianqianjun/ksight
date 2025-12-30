@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -317,6 +318,10 @@ func (ca *ClusterAggregation) handleEventEvent(eventType string, obj map[string]
 		return
 	}
 
+	if !ca.shouldIncludeEvent(event) {
+		return
+	}
+
 	// Only track scheduling-related events
 	if !isSchedulingEvent(event.Reason) {
 		return
@@ -324,6 +329,12 @@ func (ca *ClusterAggregation) handleEventEvent(eventType string, obj map[string]
 
 	// Add to event cache
 	ca.eventsByUID[event.UID] = event
+	ca.eventUIDOrder = append(ca.eventUIDOrder, event.UID)
+	if ca.maxEvents > 0 && len(ca.eventUIDOrder) > ca.maxEvents {
+		oldest := ca.eventUIDOrder[0]
+		ca.eventUIDOrder = ca.eventUIDOrder[1:]
+		delete(ca.eventsByUID, oldest)
+	}
 
 	// Index by pod if applicable
 	if event.InvolvedObjectKind == "Pod" {
@@ -520,10 +531,12 @@ func (ca *ClusterAggregation) handleSliceEvent(eventType string, obj, oldObj map
 			ca.deletedSlices = append(ca.deletedSlices, slice.Name)
 		}
 		delete(ca.slicesByUID, uid)
+		ca.dirtySlices[uid] = struct{}{}
 	case "ADDED", "MODIFIED":
 		slice := ca.parseSlice(obj)
 		if slice != nil {
 			ca.slicesByUID[slice.UID] = slice
+			ca.dirtySlices[slice.UID] = struct{}{}
 		}
 	}
 }
@@ -773,6 +786,83 @@ func (ca *ClusterAggregation) parseGPUPool(obj map[string]any) *GPUPoolData {
 	return pool
 }
 
+// handleDeploymentEvent processes Deployment events for progressive migration detection
+func (ca *ClusterAggregation) handleDeploymentEvent(eventType string, obj, oldObj map[string]any) {
+	uid := getStringField(obj, "metadata", "uid")
+	if uid == "" {
+		return
+	}
+
+	switch eventType {
+	case "DELETED":
+		delete(ca.deploymentsByUID, uid)
+		ca.dirtyMigration = true
+	case "ADDED", "MODIFIED":
+		deployment := ca.parseDeployment(obj)
+		if deployment != nil {
+			ca.deploymentsByUID[deployment.UID] = deployment
+			ca.dirtyMigration = true
+		}
+	}
+}
+
+// parseDeployment extracts DeploymentData from unstructured object
+func (ca *ClusterAggregation) parseDeployment(obj map[string]any) *DeploymentData {
+	metadata := getMapField(obj, "metadata")
+	if metadata == nil {
+		return nil
+	}
+
+	spec := getMapField(obj, "spec")
+	if spec == nil {
+		return nil
+	}
+
+	template := getMapField(spec, "template")
+	podSpec := getMapField(template, "spec")
+
+	deployment := &DeploymentData{
+		UID:       getStringField(metadata, "uid"),
+		Namespace: getStringField(metadata, "namespace"),
+		Name:      getStringField(metadata, "name"),
+		Labels:    getStringMapField(metadata, "labels"),
+	}
+
+	if podSpec == nil {
+		return deployment
+	}
+
+	containers, ok := podSpec["containers"].([]any)
+	if !ok {
+		return deployment
+	}
+
+	for _, c := range containers {
+		container, ok := c.(map[string]any)
+		if !ok {
+			continue
+		}
+		env, ok := container["env"].([]any)
+		if !ok {
+			continue
+		}
+		for _, e := range env {
+			envVar, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			if getStringField(envVar, "name") == "NVIDIA_OPERATOR_PROGRESSIVE_MIGRATION" {
+				val := getStringField(envVar, "value")
+				parsed := parseBoolString(val)
+				deployment.ProgressiveMigration = parsed
+				return deployment
+			}
+		}
+	}
+
+	return deployment
+}
+
 // Index helper methods
 
 func (ca *ClusterAggregation) addToIndex(index map[string]map[string]struct{}, key, value string) {
@@ -938,4 +1028,20 @@ func isSchedulingEvent(reason string) bool {
 		return true
 	}
 	return false
+}
+
+func parseBoolString(value string) *bool {
+	if value == "" {
+		return nil
+	}
+	switch strings.ToLower(value) {
+	case "true", "1", "yes":
+		v := true
+		return &v
+	case "false", "0", "no":
+		v := false
+		return &v
+	default:
+		return nil
+	}
 }

@@ -8,11 +8,11 @@
           <h1 class="text-xl font-semibold">Applications</h1>
         </div>
         <div class="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled>
+          <Button variant="outline" size="sm" :disabled="pods.length === 0">
             <Filter class="w-4 h-4 mr-2" />
             Filters
           </Button>
-          <Button variant="outline" size="sm" disabled>
+          <Button variant="outline" size="sm" :disabled="pods.length === 0">
             <LayoutGrid class="w-4 h-4 mr-2" />
             Group by
           </Button>
@@ -126,7 +126,7 @@
                       {{ pod.phase }}
                     </Badge>
                   </TableCell>
-                  <TableCell>{{ pod.age || '-' }}</TableCell>
+                  <TableCell>{{ formatAge(pod.age) }}</TableCell>
                   <TableCell>
                     <div class="flex items-center gap-1">
                       <Button variant="ghost" size="sm" title="Logs">
@@ -234,6 +234,23 @@ function openSettings() {
 
 function openTemplates() {
   router.push('/plugins/templates')
+}
+
+function formatAge(timestamp?: string): string {
+  if (!timestamp) return '-'
+
+  const date = new Date(timestamp)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffSec = Math.floor(diffMs / 1000)
+  const diffMin = Math.floor(diffSec / 60)
+  const diffHour = Math.floor(diffMin / 60)
+  const diffDay = Math.floor(diffHour / 24)
+
+  if (diffDay > 0) return `${diffDay}d`
+  if (diffHour > 0) return `${diffHour}h`
+  if (diffMin > 0) return `${diffMin}m`
+  return `${diffSec}s`
 }
 
 function getStatusVariant(phase: string): 'default' | 'secondary' | 'destructive' | 'outline' {

@@ -36,6 +36,11 @@ func (ca *ClusterAggregation) generateNodeView() NodeViewSnapshot {
 		for usedBy, count := range row.GPU.UsedBy {
 			summary.GPUsByUsedBy[usedBy] += count
 		}
+		for _, device := range row.GPU.Devices {
+			if device.Model != "" {
+				summary.GPUsByModel[device.Model]++
+			}
+		}
 	}
 
 	// Calculate TFlops and VRAM from GPUPools
@@ -58,10 +63,14 @@ func (ca *ClusterAggregation) generateNodeView() NodeViewSnapshot {
 // buildNodeRow builds a NodeRow from node data
 func (ca *ClusterAggregation) buildNodeRow(node *NodeData, gpuNodeByNodeName map[string]*GPUNodeData) NodeRow {
 	row := NodeRow{
-		Name:        node.Name,
-		Labels:      node.Labels,
-		Capacity:    node.Capacity,
-		Allocatable: node.Allocatable,
+		Name: node.Name,
+	}
+	if ca.minPayload {
+		row.Labels = filterNodeLabels(node.Labels)
+	} else {
+		row.Labels = node.Labels
+		row.Capacity = node.Capacity
+		row.Allocatable = node.Allocatable
 	}
 
 	// Extract zone from labels
@@ -82,9 +91,10 @@ func (ca *ClusterAggregation) buildNodeRow(node *NodeData, gpuNodeByNodeName map
 		}
 	}
 
-	// Add GPU info
+	// Add GPU info - initialize Devices as empty array to avoid null in JSON
 	row.GPU = NodeGPUInfo{
-		UsedBy: make(map[string]int),
+		UsedBy:  make(map[string]int),
+		Devices: make([]GPUDeviceRow, 0),
 	}
 	gpuUIDs := ca.gpusByNode[node.Name]
 	for uid := range gpuUIDs {
@@ -101,23 +111,31 @@ func (ca *ClusterAggregation) buildNodeRow(node *NodeData, gpuNodeByNodeName map
 		}
 		row.GPU.UsedBy[usedBy]++
 
-		row.GPU.Devices = append(row.GPU.Devices, GPUDeviceRow{
-			Name:        gpu.Name,
-			Model:       gpu.Model,
-			UsedBy:      gpu.UsedBy,
-			Capacity:    gpu.Capacity,
-			Available:   gpu.Available,
-			RunningApps: gpu.RunningApps,
-		})
+		device := GPUDeviceRow{
+			Name:   gpu.Name,
+			Model:  gpu.Model,
+			UsedBy: gpu.UsedBy,
+		}
+		if !ca.minPayload {
+			device.Capacity = gpu.Capacity
+			device.Available = gpu.Available
+			device.RunningApps = gpu.RunningApps
+		}
+		row.GPU.Devices = append(row.GPU.Devices, device)
 	}
 
 	// Also check native nvidia.com/gpu from node allocatable
-	if row.Allocatable != nil {
-		if nvidiaGPU, ok := row.Allocatable["nvidia.com/gpu"]; ok && nvidiaGPU != "0" {
+	allocatable := node.Allocatable
+	if allocatable != nil {
+		if nvidiaGPU, ok := allocatable["nvidia.com/gpu"]; ok && nvidiaGPU != "0" {
 			// If we don't have TensorFusion GPUs on this node, count native GPUs
 			if row.GPU.Total == 0 {
-				// This is a fallback - actual count parsing would need more work
-				row.GPU.UsedBy[UsedByNvidiaDevicePlugin] = 1
+				count := parseInt(nvidiaGPU)
+				if count < 1 {
+					count = 1
+				}
+				row.GPU.Total = count
+				row.GPU.UsedBy[UsedByNvidiaDevicePlugin] = count
 			}
 		}
 	}
@@ -193,9 +211,10 @@ func (ca *ClusterAggregation) generatePendingView() PendingViewSnapshot {
 	})
 
 	return PendingViewSnapshot{
-		Pods:        pods,
-		ByScheduler: byScheduler,
-		Reasons:     reasons,
+		Pods:            pods,
+		ByScheduler:     byScheduler,
+		Reasons:         reasons,
+		EventsAvailable: ca.eventsAvailable,
 	}
 }
 
@@ -241,7 +260,7 @@ func (ca *ClusterAggregation) buildPendingPodRow(pod *PodData) PendingPodRow {
 	}
 
 	// Calculate pending duration
-	if !pod.CreationTime.IsZero() {
+	if !ca.minPayload && !pod.CreationTime.IsZero() {
 		duration := time.Since(pod.CreationTime)
 		row.Since = formatDuration(duration)
 	}
@@ -251,18 +270,23 @@ func (ca *ClusterAggregation) buildPendingPodRow(pod *PodData) PendingPodRow {
 
 // generateDRAView generates the full DRA view snapshot
 func (ca *ClusterAggregation) generateDRAView() DRASnapshot {
-	var claims []ClaimRow
-	var slices []SliceRow
+	// Initialize as empty arrays to avoid null in JSON
+	claims := make([]ClaimRow, 0)
+	slices := make([]SliceRow, 0)
 	stats := make(map[string]int)
 
 	// Process claims
 	for _, claim := range ca.claimsByUID {
+		allocation := claim.Allocation
+		if ca.minPayload {
+			allocation = minimizeAllocation(claim.Allocation)
+		}
 		row := ClaimRow{
 			Namespace:     claim.Namespace,
 			Name:          claim.Name,
 			ResourceClass: claim.ResourceClass,
 			Driver:        claim.Driver,
-			AllocationRaw: claim.Allocation,
+			AllocationRaw: allocation,
 			PodRef:        claim.PodRef,
 		}
 		claims = append(claims, row)
@@ -298,10 +322,21 @@ func (ca *ClusterAggregation) generateDRAView() DRASnapshot {
 		return slices[i].Name < slices[j].Name
 	})
 
+	// Set status and message based on availability
+	status := "available"
+	message := ""
+	if !ca.draAvailable {
+		status = "not_available"
+		message = "DRA resources are not available in this cluster"
+		stats["notAvailable"] = 1
+	}
+
 	return DRASnapshot{
-		Claims: claims,
-		Slices: slices,
-		Stats:  stats,
+		Claims:  claims,
+		Slices:  slices,
+		Stats:   stats,
+		Status:  status,
+		Message: message,
 	}
 }
 
@@ -325,17 +360,10 @@ func (ca *ClusterAggregation) generateMigrationView() MigrationSnapshot {
 			continue
 		}
 
-		// Check if pod requests native nvidia.com/gpu
-		// This would need to be extracted from pod spec containers
-		// For now, we detect based on scheduler mismatch
-		if pod.SchedulerName == SchedulerTensorFusion {
-			// Check if any annotation indicates native GPU usage
-			if pod.Annotations != nil {
-				if _, hasTF := pod.Annotations[TFAnnotationGPUPool]; !hasTF {
-					// Pod scheduled by TF scheduler but no TF annotations - potential conflict
-					// This is a simplified check
-				}
-			}
+		resourceType := determineResourceType(pod)
+		expectedUsedBy := expectedUsedByForResource(resourceType)
+		if expectedUsedBy == "" {
+			continue
 		}
 
 		// Check for actual GPU usedBy mismatch
@@ -350,11 +378,6 @@ func (ca *ClusterAggregation) generateMigrationView() MigrationSnapshot {
 			for _, app := range gpu.RunningApps {
 				if app.Namespace == pod.Namespace && app.Name == pod.Name {
 					// Pod is running on this GPU
-					expectedUsedBy := UsedByTensorFusion
-					if pod.SchedulerName != SchedulerTensorFusion {
-						expectedUsedBy = UsedByNvidiaDevicePlugin
-					}
-
 					if gpu.UsedBy != "" && gpu.UsedBy != expectedUsedBy {
 						conflicts = append(conflicts, ConflictRow{
 							Node: pod.NodeName,
@@ -363,7 +386,7 @@ func (ca *ClusterAggregation) generateMigrationView() MigrationSnapshot {
 								Name:      pod.Name,
 							},
 							UsedBy:       gpu.UsedBy,
-							ResourceType: determineResourceType(pod),
+							ResourceType: resourceType,
 						})
 					}
 				}
@@ -371,15 +394,7 @@ func (ca *ClusterAggregation) generateMigrationView() MigrationSnapshot {
 		}
 	}
 
-	// Check progressive migration mode from GPUPools
-	progressiveMigration := false
-	for _, pool := range ca.gpuPoolsByUID {
-		// If any pool has oversubscription enabled, consider it progressive migration mode
-		if pool.Oversubscription {
-			progressiveMigration = true
-			break
-		}
-	}
+	progressiveMigration := ca.detectProgressiveMigration()
 
 	return MigrationSnapshot{
 		UsedByStats:          usedByStats,
@@ -390,6 +405,9 @@ func (ca *ClusterAggregation) generateMigrationView() MigrationSnapshot {
 
 // determineResourceType determines what GPU resource type a pod is using
 func determineResourceType(pod *PodData) string {
+	if pod == nil {
+		return ""
+	}
 	if pod.Annotations != nil {
 		if _, ok := pod.Annotations[TFAnnotationDRAEnabled]; ok {
 			return "dra"
@@ -398,7 +416,49 @@ func determineResourceType(pod *PodData) string {
 			return "tensor-fusion"
 		}
 	}
-	return "nvidia.com/gpu"
+	if len(pod.ResourceClaims) > 0 {
+		return "dra"
+	}
+	if pod.GPURequest != "" {
+		return "nvidia.com/gpu"
+	}
+	return ""
+}
+
+func expectedUsedByForResource(resourceType string) string {
+	switch resourceType {
+	case "dra", "tensor-fusion":
+		return UsedByTensorFusion
+	case "nvidia.com/gpu":
+		return UsedByNvidiaDevicePlugin
+	default:
+		return ""
+	}
+}
+
+func (ca *ClusterAggregation) detectProgressiveMigration() bool {
+	for _, deployment := range ca.deploymentsByUID {
+		if deployment == nil || !isTFControllerDeployment(deployment) {
+			continue
+		}
+		if deployment.ProgressiveMigration != nil {
+			return *deployment.ProgressiveMigration
+		}
+	}
+	return false
+}
+
+func isTFControllerDeployment(deployment *DeploymentData) bool {
+	if deployment == nil || deployment.Labels == nil {
+		return false
+	}
+	if deployment.Labels["tensor-fusion.ai/component"] != "operator" {
+		return false
+	}
+	if deployment.Labels["app.kubernetes.io/component"] != "controller" {
+		return false
+	}
+	return true
 }
 
 // Delta generation methods
@@ -530,17 +590,35 @@ func (ca *ClusterAggregation) generateDRAViewDelta() DRADelta {
 	for uid := range ca.dirtyClaims {
 		claim := ca.claimsByUID[uid]
 		if claim != nil {
+			allocation := claim.Allocation
+			if ca.minPayload {
+				allocation = minimizeAllocation(claim.Allocation)
+			}
 			row := ClaimRow{
 				Namespace:     claim.Namespace,
 				Name:          claim.Name,
 				ResourceClass: claim.ResourceClass,
 				Driver:        claim.Driver,
-				AllocationRaw: claim.Allocation,
+				AllocationRaw: allocation,
 				PodRef:        claim.PodRef,
 			}
 			delta.UpsertClaims = append(delta.UpsertClaims, row)
 		}
 		// Note: deleted claims are already tracked in deletedClaims
+	}
+
+	// Process dirty slices
+	for uid := range ca.dirtySlices {
+		slice := ca.slicesByUID[uid]
+		if slice != nil {
+			row := SliceRow{
+				Name:     slice.Name,
+				NodeName: slice.NodeName,
+				Driver:   slice.Driver,
+				Devices:  slice.Devices,
+			}
+			delta.UpsertSlices = append(delta.UpsertSlices, row)
+		}
 	}
 
 	// Recalculate stats
@@ -553,6 +631,9 @@ func (ca *ClusterAggregation) generateDRAViewDelta() DRADelta {
 	}
 	for _, slice := range ca.slicesByUID {
 		delta.Stats["totalDevices"] += slice.Devices
+	}
+	if !ca.draAvailable {
+		delta.Stats["notAvailable"] = 1
 	}
 
 	return delta
@@ -594,4 +675,55 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dd%dh", days, hours)
 	}
 	return fmt.Sprintf("%dd", days)
+}
+
+func filterNodeLabels(labelsMap map[string]string) map[string]string {
+	if labelsMap == nil {
+		return nil
+	}
+	allowed := []string{
+		"topology.kubernetes.io/region",
+		"topology.kubernetes.io/zone",
+		"failure-domain.beta.kubernetes.io/region",
+		"failure-domain.beta.kubernetes.io/zone",
+		"kubernetes.io/hostname",
+	}
+	filtered := make(map[string]string)
+	for _, key := range allowed {
+		if val, ok := labelsMap[key]; ok {
+			filtered[key] = val
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
+func minimizeAllocation(allocation map[string]any) map[string]any {
+	if allocation == nil {
+		return nil
+	}
+	devices, ok := allocation["devices"].(map[string]any)
+	if !ok {
+		return allocation
+	}
+	results, ok := devices["results"].([]any)
+	if !ok {
+		return allocation
+	}
+	refs := make([]any, 0, len(results))
+	for _, result := range results {
+		resultMap, ok := result.(map[string]any)
+		if !ok {
+			continue
+		}
+		if deviceRef, ok := resultMap["device"]; ok {
+			refs = append(refs, deviceRef)
+		}
+	}
+	if len(refs) == 0 {
+		return allocation
+	}
+	return map[string]any{"deviceRefs": refs}
 }

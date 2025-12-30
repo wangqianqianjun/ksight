@@ -1,50 +1,37 @@
 <template>
-  <div class="bg-muted/30 border-r flex flex-col items-center py-2 gap-1">
+  <div class="bg-muted/30 border-r shadow-sm flex flex-col items-stretch py-6 px-2 gap-4">
     <router-link
       v-for="item in sidebarItems"
       :key="item.id"
       :to="`/plugins/${item.pluginId}`"
-      class="p-2 rounded-md hover:bg-muted transition-colors relative"
-      :class="{ 'bg-primary text-primary-foreground': isActive(item.pluginId) }"
+      class="flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-3.5 text-[12px] font-medium text-muted-foreground hover:bg-muted/70 hover:text-foreground transition-colors relative border border-transparent"
+      :class="{
+        'bg-primary/10 text-foreground border-primary/20 shadow-sm': isActive(item.pluginId)
+      }"
       :title="item.title"
+      :aria-label="item.title"
     >
-      <component :is="getIcon(item.icon)" class="w-5 h-5" />
+      <component :is="getIcon(item.icon)" class="w-6 h-6" />
+      <span class="text-center leading-tight">{{ item.title }}</span>
       <div
         v-if="item.badge"
-        class="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs"
+        class="absolute top-1 right-2 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]"
       >
         {{ item.badge }}
       </div>
     </router-link>
 
-    <!-- Command Palette -->
-    <div class="mt-auto">
-      <Button
-        variant="ghost"
-        size="icon"
-        class="h-8 w-8"
-        @click="openCommandPalette"
-        title="Command Palette (Cmd+T)"
-      >
-        <Command class="w-4 h-4" />
-      </Button>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import type { SidebarItem } from '@/core/types'
-import { Button } from '@/components/ui/button'
 import {
   Layers,
-  Activity,
   Server,
-  Cpu,
-  Box,
-  FileText,
-  LayoutDashboard,
-  Command
+  Cpu
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -52,12 +39,8 @@ const route = useRoute()
 // Icon mapping
 const iconMap: Record<string, any> = {
   'layers': Layers,
-  'activity': Activity,
   'server': Server,
-  'cpu': Cpu,
-  'box': Box,
-  'file-text': FileText,
-  'chart': LayoutDashboard
+  'cpu': Cpu
 }
 
 const getIcon = (iconName: string) => {
@@ -71,16 +54,7 @@ const isActive = (pluginId: string) => {
 // Mock sidebar items - will be loaded from plugin registry
 const sidebarItems = ref<SidebarItem[]>([
   { id: 'apps', title: 'Applications', icon: 'layers', order: 1, pluginId: 'applications' },
-  { id: 'ops', title: 'Operations', icon: 'activity', order: 2, pluginId: 'operations' },
-  { id: 'nodes', title: 'Nodes', icon: 'server', order: 3, pluginId: 'nodes' },
-  { id: 'scheduling', title: 'GPU Scheduling', icon: 'cpu', order: 4, pluginId: 'scheduling' },
-  { id: 'resources', title: 'Resources', icon: 'box', order: 5, pluginId: 'resources' },
-  { id: 'templates', title: 'Templates', icon: 'file-text', order: 6, pluginId: 'templates' },
-  { id: 'boards', title: 'Custom Boards', icon: 'chart', order: 7, pluginId: 'boards' }
+  { id: 'nodes', title: 'Nodes', icon: 'server', order: 2, pluginId: 'nodes' },
+  { id: 'scheduling', title: 'GPU Scheduling', icon: 'cpu', order: 3, pluginId: 'scheduling' }
 ])
-
-const openCommandPalette = () => {
-  // Will implement command palette
-  console.log('Open command palette')
-}
 </script>

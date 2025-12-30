@@ -1,55 +1,9 @@
 <template>
-  <div 
-    class="title-bar flex items-center bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-700/50 h-9" 
-    style="--wails-draggable: drag"
-    @dblclick="handleDoubleClick"
+  <div
+    class="title-bar flex items-center bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-700/50 h-9"
   >
-    <!-- Mac-style Window Controls (Left) -->
-    <div class="flex items-center h-full pl-4 pr-3" style="--wails-draggable: no-drag">
-      <div class="flex items-center space-x-2 p-1 rounded-lg bg-gray-100/50 dark:bg-gray-800/50">
-        <!-- Close -->
-        <button
-          @click="closeWindow"
-          class="mac-control w-3 h-3 rounded-full bg-red-500 hover:bg-red-600 flex items-center justify-center group relative overflow-hidden"
-          title="Close"
-        >
-          <div class="absolute inset-0 rounded-full bg-gradient-to-br from-red-400 to-red-600 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-          <X :size="8" class="text-red-900 opacity-0 group-hover:opacity-100 transition-opacity duration-200 relative z-10" />
-        </button>
-        
-        <!-- Minimize -->
-        <button
-          @click="minimizeWindow"
-          class="mac-control w-3 h-3 rounded-full bg-yellow-500 hover:bg-yellow-600 flex items-center justify-center group relative overflow-hidden"
-          title="Minimize"
-        >
-          <div class="absolute inset-0 rounded-full bg-gradient-to-br from-yellow-400 to-yellow-600 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-          <Minus :size="8" class="text-yellow-900 opacity-0 group-hover:opacity-100 transition-opacity duration-200 relative z-10" />
-        </button>
-        
-        <!-- Maximize/Restore -->
-        <button
-          @click="toggleMaximize"
-          class="mac-control w-3 h-3 rounded-full bg-green-500 hover:bg-green-600 flex items-center justify-center group relative overflow-hidden"
-          :title="isMaximized ? 'Restore' : 'Maximize'"
-        >
-          <div class="absolute inset-0 rounded-full bg-gradient-to-br from-green-400 to-green-600 opacity-0 group-hover:opacity-100 transition-opacity duration-200"></div>
-          <Minimize2 
-            v-if="isMaximized"
-            :size="8"
-            class="text-green-900 opacity-0 group-hover:opacity-100 transition-opacity duration-200 relative z-10" 
-          />
-          <Maximize2 
-            v-else
-            :size="8"
-            class="text-green-900 opacity-0 group-hover:opacity-100 transition-opacity duration-200 relative z-10" 
-          />
-        </button>
-      </div>
-    </div>
-
     <!-- Cluster Tabs Container -->
-    <div class="flex-1 flex items-center h-full min-w-0">
+    <div class="flex-1 flex items-center h-full min-w-0 pl-4">
       <ClusterTabs 
         :tabs="tabs" 
         @set-active-tab="setActiveTab"
@@ -59,7 +13,7 @@
     </div>
 
     <!-- Right Side Actions -->
-    <div class="flex items-center h-full pr-4 space-x-2" style="--wails-draggable: no-drag">
+    <div class="flex items-center h-full pr-4 space-x-2">
       <!-- Theme Toggle -->
       <ThemeToggle />
       
@@ -77,8 +31,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { WindowMinimise, WindowMaximise, WindowUnmaximise, Quit } from '@/wailsjs/runtime/runtime'
-import { X, Minus, Maximize2, Minimize2, Settings } from 'lucide-vue-next'
+import { Settings } from 'lucide-vue-next'
 import ClusterTabs from '@/app/frame/ClusterTabs.vue'
 import ThemeToggle from '@/app/frame/ThemeToggle.vue'
 import type { Tab } from '@/app/frame/ClusterTabs.vue'
@@ -96,7 +49,6 @@ const DefaultIcon = {
 }
 
 // State
-const isMaximized = ref(false)
 const tabs = ref<Tab[]>([
   {
     id: '1',
@@ -141,40 +93,6 @@ const openSettings = () => {
   console.log('Open settings')
 }
 
-// Window controls
-const minimizeWindow = async () => {
-  try {
-    await WindowMinimise()
-  } catch (error) {
-    console.error('WindowMinimise error:', error)
-  }
-}
-
-const toggleMaximize = async () => {
-  try {
-    if (isMaximized.value) {
-      await WindowUnmaximise()
-    } else {
-      await WindowMaximise()
-    }
-    isMaximized.value = !isMaximized.value
-  } catch (error) {
-    console.error('WindowMaximise/Unmaximise error:', error)
-  }
-}
-
-const closeWindow = async () => {
-  try {
-    await Quit()
-  } catch (error) {
-    console.error('Quit error:', error)
-  }
-}
-
-const handleDoubleClick = () => {
-  toggleMaximize()
-}
-
 // Expose methods for parent components
 defineExpose({
   addTab,
@@ -186,30 +104,7 @@ defineExpose({
 
 <style scoped>
 .title-bar {
-  --wails-draggable: drag;
-  -webkit-app-region: drag;
   user-select: none;
-}
-
-.title-bar button,
-.mac-control,
-.settings-btn {
-  --wails-draggable: no-drag;
-  -webkit-app-region: no-drag;
-}
-
-.mac-control {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.mac-control:hover {
-  transform: scale(1.15);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-}
-
-.mac-control:active {
-  transform: scale(0.95);
 }
 
 .settings-btn {
