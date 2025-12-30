@@ -4,44 +4,249 @@
     <div class="p-4 border-b">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
-          <div class="w-5 h-5 bg-current opacity-60"></div>
+          <Layers class="w-5 h-5" />
           <h1 class="text-xl font-semibold">Applications</h1>
         </div>
         <div class="flex items-center gap-2">
-          <!-- View switcher will go here -->
-          <Button variant="outline" size="sm">
-            <div class="w-4 h-4 bg-current opacity-60 mr-2"></div>
-            View
+          <Button variant="outline" size="sm" disabled>
+            <Filter class="w-4 h-4 mr-2" />
+            Filters
+          </Button>
+          <Button variant="outline" size="sm" disabled>
+            <LayoutGrid class="w-4 h-4 mr-2" />
+            Group by
           </Button>
         </div>
       </div>
     </div>
-    
+
+    <!-- Summary Row (only shown when connected) -->
+    <div v-if="isConnected && !loading" class="px-4 py-2 border-b bg-muted/30 flex items-center gap-4 text-sm">
+      <Badge variant="secondary">
+        <Box class="w-3 h-3 mr-1" />
+        {{ stats.apps }} Apps
+      </Badge>
+      <Badge variant="secondary">
+        <Container class="w-3 h-3 mr-1" />
+        {{ stats.pods }} Pods
+      </Badge>
+      <Badge variant="secondary">
+        <FolderOpen class="w-3 h-3 mr-1" />
+        {{ stats.namespaces }} Namespaces
+      </Badge>
+      <Badge v-if="stats.unhealthy > 0" variant="destructive">
+        <AlertCircle class="w-3 h-3 mr-1" />
+        {{ stats.unhealthy }} Unhealthy
+      </Badge>
+    </div>
+
     <!-- Content Area -->
-    <div class="flex-1 overflow-hidden">
-      <!-- Filters and toolbar will go here -->
-      <div class="p-4">
-        <p class="text-muted-foreground mb-4">
-          Applications view shows Pods grouped by app labels. This will contain:
-        </p>
-        <ul class="list-disc list-inside space-y-2 text-sm text-muted-foreground">
-          <li>Data table with pods grouped by app labels</li>
-          <li>Filters: App names, namespaces, resource types, labels, images, nodes</li>
-          <li>Group by: App labels, environment, workload type, node</li>
-          <li>Actions: Detail, edit YAML, exec, logs, port-forward, etc.</li>
-        </ul>
-        
-        <!-- Placeholder for the actual pod table -->
-        <div class="mt-8 p-6 border rounded-lg bg-muted/50">
-          <p class="text-center text-muted-foreground">
-            Pod data table will be implemented here using the existing pod.vue and table-definition-pod.ts
+    <div class="flex-1 overflow-auto">
+      <!-- Disconnected State -->
+      <div v-if="!isConnected" class="flex items-center justify-center h-full">
+        <div class="text-center max-w-md">
+          <div class="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <Unplug class="w-8 h-8 text-muted-foreground" />
+          </div>
+          <h2 class="text-xl font-semibold mb-2">No cluster connected</h2>
+          <p class="text-muted-foreground mb-6">
+            Connect to a cluster to view applications and workloads.
           </p>
+          <div class="flex items-center justify-center gap-3">
+            <Button @click="connectCluster">
+              <Plug class="w-4 h-4 mr-2" />
+              Connect to cluster
+            </Button>
+            <Button variant="outline" @click="openSettings">
+              Open settings
+            </Button>
+          </div>
         </div>
+      </div>
+
+      <!-- Loading State -->
+      <div v-else-if="loading" class="flex items-center justify-center h-full">
+        <div class="text-center">
+          <RefreshCw class="w-8 h-8 animate-spin mx-auto mb-4 text-muted-foreground" />
+          <p class="text-muted-foreground">Loading applications...</p>
+          <p class="text-xs text-muted-foreground mt-1">This may take a few seconds</p>
+        </div>
+      </div>
+
+      <!-- Empty State -->
+      <div v-else-if="pods.length === 0" class="flex items-center justify-center h-full">
+        <div class="text-center max-w-md">
+          <div class="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+            <Inbox class="w-8 h-8 text-muted-foreground" />
+          </div>
+          <h2 class="text-xl font-semibold mb-2">No applications found</h2>
+          <p class="text-muted-foreground mb-6">
+            This cluster has no running workloads yet.
+          </p>
+          <div class="flex items-center justify-center gap-3">
+            <Button>
+              <Plus class="w-4 h-4 mr-2" />
+              Create workload
+            </Button>
+            <Button variant="outline" @click="openTemplates">
+              Open templates
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Table (when pods exist) -->
+      <div v-else class="p-4">
+        <Card>
+          <CardHeader>
+            <CardTitle class="flex items-center gap-2">
+              <Container class="w-5 h-5" />
+              Workloads
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pod</TableHead>
+                  <TableHead>Namespace</TableHead>
+                  <TableHead>Node</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Age</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow v-for="pod in pods" :key="`${pod.namespace}/${pod.name}`">
+                  <TableCell class="font-medium">{{ pod.name }}</TableCell>
+                  <TableCell>{{ pod.namespace }}</TableCell>
+                  <TableCell>{{ pod.nodeName || '-' }}</TableCell>
+                  <TableCell>
+                    <Badge :variant="getStatusVariant(pod.phase)">
+                      {{ pod.phase }}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{{ pod.age || '-' }}</TableCell>
+                  <TableCell>
+                    <div class="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" title="Logs">
+                        <FileText class="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" title="Shell">
+                        <Terminal class="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="sm" title="Details">
+                        <MoreHorizontal class="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed, ref, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Layers, LayoutGrid, Filter, Box, Container, FolderOpen, AlertCircle,
+  Unplug, Plug, RefreshCw, Inbox, Plus, FileText, Terminal, MoreHorizontal
+} from 'lucide-vue-next'
+import { useClusterStore } from '@/shared/stores/cluster'
+import { useClusterDialog } from '@/shared/composables/useClusterDialog'
+
+const router = useRouter()
+const clusterStore = useClusterStore()
+const { open: openClusterDialog } = useClusterDialog()
+
+const loading = ref(false)
+const pods = ref<any[]>([])
+
+const isConnected = computed(() => clusterStore.activeClusterId !== null)
+
+const stats = computed(() => ({
+  apps: new Set(pods.value.map(p => p.name.split('-').slice(0, -1).join('-'))).size,
+  pods: pods.value.length,
+  namespaces: new Set(pods.value.map(p => p.namespace)).size,
+  unhealthy: pods.value.filter(p => p.phase !== 'Running').length
+}))
+
+async function fetchPods() {
+  if (!clusterStore.activeClusterId) return
+
+  loading.value = true
+  try {
+    const response = await fetch(`/api/clusters/${clusterStore.activeClusterId}/pods`)
+    if (response.ok) {
+      pods.value = await response.json() || []
+    } else {
+      console.error('Failed to fetch pods:', await response.text())
+      pods.value = []
+    }
+  } catch (e) {
+    console.error('Failed to fetch pods:', e)
+    pods.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(async () => {
+  if (clusterStore.clusterList.length === 0) {
+    try {
+      await clusterStore.loadClusters()
+    } catch (e) {
+      console.warn('Failed to load clusters:', e)
+    }
+  }
+
+  // Fetch pods if connected
+  if (clusterStore.activeClusterId) {
+    await fetchPods()
+  }
+})
+
+// Watch for cluster connection changes
+watch(() => clusterStore.activeClusterId, async (newClusterId) => {
+  if (newClusterId) {
+    await fetchPods()
+  } else {
+    pods.value = []
+  }
+})
+
+function connectCluster() {
+  openClusterDialog()
+}
+
+function openSettings() {
+  // TODO: Open settings
+}
+
+function openTemplates() {
+  router.push('/plugins/templates')
+}
+
+function getStatusVariant(phase: string): 'default' | 'secondary' | 'destructive' | 'outline' {
+  switch (phase?.toLowerCase()) {
+    case 'running':
+      return 'default'
+    case 'pending':
+      return 'secondary'
+    case 'failed':
+    case 'error':
+      return 'destructive'
+    default:
+      return 'outline'
+  }
+}
 </script>

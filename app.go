@@ -4,15 +4,18 @@ import (
 	"context"
 	"fmt"
 
+	"ksight/pkg/informer"
 	"ksight/pkg/service"
+	"ksight/pkg/service/scheduler"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // App struct
 type App struct {
-	ctx            context.Context
-	clusterService *service.ClusterService
+	ctx                 context.Context
+	clusterService      *service.ClusterService
+	schedulerAggregator *scheduler.Aggregator
 }
 
 // NewApp creates a new App application struct
@@ -25,6 +28,58 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.clusterService = service.NewClusterService(ctx)
+
+	// Create scheduler aggregator with the cluster service as provider
+	a.schedulerAggregator = scheduler.NewAggregator(
+		&service.WailsEventEmitter{Ctx: ctx},
+		&clusterClientAdapter{cs: a.clusterService},
+	)
+
+	// Wire informer events to the scheduler aggregator
+	a.clusterService.RegisterResourceHandler(func(event informer.Event) {
+		// Convert event object to map for aggregator
+		var obj map[string]any
+		var oldObj map[string]any
+
+		if event.Object != nil {
+			obj = event.Object.UnstructuredContent()
+		}
+		if event.OldObject != nil {
+			oldObj = event.OldObject.UnstructuredContent()
+		}
+
+		a.schedulerAggregator.HandleEvent(
+			event.ClusterID,
+			event.GVR,
+			event.Type,
+			obj,
+			oldObj,
+		)
+	})
+}
+
+// clusterClientAdapter adapts ClusterService to scheduler.ClusterClientProvider
+type clusterClientAdapter struct {
+	cs *service.ClusterService
+}
+
+func (a *clusterClientAdapter) AddResourceWatcher(clusterID string, gvr schema.GroupVersionResource, namespace string) error {
+	return a.cs.AddResourceWatcher(service.ResourceWatchRequest{
+		ClusterID: clusterID,
+		Group:     gvr.Group,
+		Version:   gvr.Version,
+		Resource:  gvr.Resource,
+		Namespace: namespace,
+	})
+}
+
+func (a *clusterClientAdapter) RemoveResourceWatcher(clusterID string, gvr schema.GroupVersionResource) error {
+	return a.cs.RemoveResourceWatcher(service.ResourceWatchRequest{
+		ClusterID: clusterID,
+		Group:     gvr.Group,
+		Version:   gvr.Version,
+		Resource:  gvr.Resource,
+	})
 }
 
 // Greet returns a greeting for the given name
@@ -104,6 +159,23 @@ func (a *App) GetKubeconfigFiles() ([]string, error) {
 // WatchDefaultKubeconfig watches the default ~/.kube directory for changes
 func (a *App) WatchDefaultKubeconfig() error {
 	return a.clusterService.WatchDefaultKubeconfig()
+}
+
+// Scheduler Aggregation Methods
+
+// StartSchedulerAggregation starts scheduler state aggregation for a cluster
+func (a *App) StartSchedulerAggregation(request scheduler.SchedulerAggregationRequest) error {
+	return a.schedulerAggregator.StartAggregation(request)
+}
+
+// StopSchedulerAggregation stops scheduler aggregation for a cluster
+func (a *App) StopSchedulerAggregation(clusterID string) error {
+	return a.schedulerAggregator.StopAggregation(clusterID)
+}
+
+// GetSchedulerSnapshot returns current scheduler snapshot for a cluster
+func (a *App) GetSchedulerSnapshot(clusterID string) (*scheduler.SchedulerSnapshot, error) {
+	return a.schedulerAggregator.GetSnapshot(clusterID)
 }
 
 // Shutdown gracefully shuts down the app

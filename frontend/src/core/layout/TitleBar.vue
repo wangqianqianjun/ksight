@@ -82,6 +82,9 @@ import { X, Minus, Maximize2, Minimize2, Settings } from 'lucide-vue-next'
 import ClusterTabs from '@/app/frame/ClusterTabs.vue'
 import ThemeToggle from '@/app/frame/ThemeToggle.vue'
 import type { Tab } from '@/app/frame/ClusterTabs.vue'
+import { useClusterDialog } from '@/shared/composables/useClusterDialog'
+
+const { open: openClusterDialog } = useClusterDialog()
 
 // Default icon component for tabs
 const DefaultIcon = {
@@ -128,23 +131,8 @@ const closeTab = (tabId: string) => {
 }
 
 const addTab = () => {
-  const newId = Date.now().toString()
-  const newTab: Tab = {
-    id: newId,
-    title: `new-cluster`,
-    icon: DefaultIcon,
-    active: false,
-    connected: false,
-    pinned: false,
-    route: '/dashboard'
-  }
-  
-  // Deactivate all tabs
-  tabs.value.forEach(tab => tab.active = false)
-  
-  // Add and activate new tab
-  newTab.active = true
-  tabs.value.push(newTab)
+  // Open cluster connection dialog instead of adding empty tab
+  openClusterDialog()
 }
 
 // Settings handler

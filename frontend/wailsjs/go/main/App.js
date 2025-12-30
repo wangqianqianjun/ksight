@@ -22,6 +22,10 @@ export function GetResourceTypes(arg1) {
   return window['go']['main']['App']['GetResourceTypes'](arg1);
 }
 
+export function GetSchedulerSnapshot(arg1) {
+  return window['go']['main']['App']['GetSchedulerSnapshot'](arg1);
+}
+
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
 }
@@ -44,6 +48,14 @@ export function SaveKubeconfigToFile(arg1, arg2) {
 
 export function Shutdown() {
   return window['go']['main']['App']['Shutdown']();
+}
+
+export function StartSchedulerAggregation(arg1) {
+  return window['go']['main']['App']['StartSchedulerAggregation'](arg1);
+}
+
+export function StopSchedulerAggregation(arg1) {
+  return window['go']['main']['App']['StopSchedulerAggregation'](arg1);
 }
 
 export function ToggleClusterPin(arg1) {

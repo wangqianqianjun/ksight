@@ -195,4 +195,8 @@ debug network policy，net topology, network tracing flows and commands etc.
 # Other Requirements
 
 - Don't write too many codes at once, do one small thing at a time, ask me to review and continue
-- Be concise and clear, modern and beautiful, don't reinvent wheels, no redundant codes and comments, don't add CSS in vue component if tailwind can do it, think logic and styling and component abstraction, don't repeat.
+- Be concise and clear, modern and beautiful, don't reinvent wheels, no redundant codes and comments, don't add CSS in vue component if tailwind can do it, think logic and styling and component abstraction, don't repeat. 
+
+# Design Docs
+
+- Applications UX: ./applications-ux.md

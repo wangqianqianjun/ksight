@@ -132,7 +132,7 @@
       <div class="text-sm space-y-2">
         <div>Clusters: {{ Object.keys(clusters).length }}</div>
         <div>Resource Events: {{ resourceEvents.length }}</div>
-        <div>SDK Available: {{ !!window.k }}</div>
+        <div>SDK Available: {{ sdkAvailable }}</div>
       </div>
     </div>
   </div>
@@ -153,6 +153,9 @@ const newCluster = ref({
 
 const selectedClusterId = ref('')
 const selectedResource = ref('')
+
+// SDK availability check
+const sdkAvailable = computed(() => typeof window !== 'undefined' && !!window.k)
 
 // Event listeners cleanup functions
 const cleanupFunctions: (() => void)[] = []

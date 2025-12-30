@@ -5,7 +5,7 @@ import type { RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/plugins/applications'
+    redirect: '/plugins/scheduling'
   },
   {
     path: '/plugins/applications',
@@ -36,6 +36,11 @@ const routes: RouteRecordRaw[] = [
     path: '/plugins/boards',
     name: 'boards',
     component: () => import('@/plugins/boards/BoardsView.vue')
+  },
+  {
+    path: '/plugins/scheduling',
+    name: 'scheduling',
+    component: () => import('@/plugins/scheduling/SchedulingView.vue')
   }
 ]
 

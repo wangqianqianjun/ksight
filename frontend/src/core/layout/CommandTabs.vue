@@ -16,7 +16,7 @@
       
       <!-- Add Command Tab Button -->
       <Popover>
-        <PopoverTrigger asChild>
+        <PopoverTrigger as-child>
           <Button variant="ghost" size="icon" class="h-6 w-6">
             <plus class="w-4 h-4" />
           </Button>

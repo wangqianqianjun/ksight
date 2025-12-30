@@ -27,24 +27,5 @@ export interface LocaleMessages {
   [key: string]: string
 }
 
-// Wails API types
-export interface WailsAPI {
-  Greet: (name: string) => Promise<string>
-  // K8s operations will be added here
-  ListPods: (namespace?: string) => Promise<any[]>
-  GetPod: (name: string, namespace: string) => Promise<any>
-  // More K8s operations...
-}
-
-// Global type augmentations
-declare global {
-  interface Window {
-    go?: {
-      main: {
-        App: WailsAPI
-      }
-    }
-    // K8s SDK will be available globally
-    k?: import('./k8s').KubernetesSDK
-  }
-}
+// Note: Window global type declarations are defined in @/lib/k8s-sdk.ts
+// to avoid duplicate declarations

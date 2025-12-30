@@ -1,4 +1,7 @@
-import { EventsOn, EventsOff } from '@wailsjs/runtime/runtime'
+import type { SchedulerAggregationRequest, SchedulerSnapshot } from '@/plugins/scheduling/types'
+
+// API base URL - will be proxied by Vite in development
+const API_BASE = '/api'
 
 // Types for cluster management
 export interface ClusterInfo {
@@ -36,126 +39,249 @@ export interface ResourceEvent {
   timestamp: string
 }
 
-// Wails backend method calls
-declare global {
-  interface Window {
-    go: {
-      main: {
-        App: {
-          AddCluster(name: string, kubeconfig: string, context: string): Promise<string>
-          RemoveCluster(clusterId: string): Promise<void>
-          GetClusters(): Promise<Record<string, ClusterInfo>>
-          ToggleClusterPin(clusterId: string): Promise<void>
-          AddResourceWatcher(clusterId: string, group: string, version: string, resource: string, namespace: string): Promise<void>
-          RemoveResourceWatcher(clusterId: string, group: string, version: string, resource: string): Promise<void>
-          GetResourceTypes(clusterId: string): Promise<GroupVersionResource[]>
-          LoadKubeconfigFromFile(filePath: string): Promise<string>
-          SaveKubeconfigToFile(content: string, fileName: string): Promise<string>
-          GetKubeconfigFiles(): Promise<string[]>
-          WatchDefaultKubeconfig(): Promise<void>
-          Greet(name: string): Promise<string>
+// WebSocket event message
+interface WSMessage {
+  event: string
+  data: any
+}
+
+// WebSocket Manager for real-time events
+class WebSocketManager {
+  private ws: WebSocket | null = null
+  private eventListeners: Map<string, Set<Function>> = new Map()
+  private reconnectAttempts = 0
+  private maxReconnectAttempts = 5
+  private reconnectDelay = 1000
+
+  connect() {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${protocol}//${window.location.host}/api/ws`
+
+    try {
+      this.ws = new WebSocket(wsUrl)
+
+      this.ws.onopen = () => {
+        console.log('WebSocket connected')
+        this.reconnectAttempts = 0
+      }
+
+      this.ws.onmessage = (event) => {
+        try {
+          const msg: WSMessage = JSON.parse(event.data)
+          this.dispatchEvent(msg.event, msg.data)
+        } catch (e) {
+          console.error('Failed to parse WebSocket message:', e)
         }
       }
+
+      this.ws.onclose = () => {
+        console.log('WebSocket disconnected')
+        this.scheduleReconnect()
+      }
+
+      this.ws.onerror = (error) => {
+        console.error('WebSocket error:', error)
+      }
+    } catch (e) {
+      console.error('Failed to create WebSocket:', e)
+      this.scheduleReconnect()
+    }
+  }
+
+  private scheduleReconnect() {
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++
+      const delay = this.reconnectDelay * this.reconnectAttempts
+      console.log(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`)
+      setTimeout(() => this.connect(), delay)
+    }
+  }
+
+  disconnect() {
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
+    }
+  }
+
+  on(event: string, callback: Function): () => void {
+    if (!this.eventListeners.has(event)) {
+      this.eventListeners.set(event, new Set())
+    }
+    this.eventListeners.get(event)!.add(callback)
+
+    return () => {
+      const listeners = this.eventListeners.get(event)
+      if (listeners) {
+        listeners.delete(callback)
+      }
+    }
+  }
+
+  private dispatchEvent(event: string, data: any) {
+    const listeners = this.eventListeners.get(event)
+    if (listeners) {
+      listeners.forEach(callback => {
+        try {
+          callback(data)
+        } catch (e) {
+          console.error(`Error in event listener for ${event}:`, e)
+        }
+      })
     }
   }
 }
 
-// K8s SDK Class
+// Global WebSocket manager
+export const wsManager = new WebSocketManager()
+
+// K8s SDK Class using HTTP API
 export class K8sSDK {
   private eventListeners: Map<string, Set<Function>> = new Map()
 
+  constructor() {
+    // Connect WebSocket when SDK is created
+    if (typeof window !== 'undefined') {
+      wsManager.connect()
+    }
+  }
+
   async addCluster(name: string, kubeconfig: string, context: string = ''): Promise<string> {
-    return window.go.main.App.AddCluster(name, kubeconfig, context)
+    const response = await fetch(`${API_BASE}/clusters`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, kubeconfig, context })
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Failed to add cluster')
+    return data.clusterId
   }
 
   async removeCluster(clusterId: string): Promise<void> {
-    return window.go.main.App.RemoveCluster(clusterId)
+    const response = await fetch(`${API_BASE}/clusters/${clusterId}`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.error || 'Failed to remove cluster')
+    }
   }
 
   async getClusters(): Promise<Record<string, ClusterInfo>> {
-    return window.go.main.App.GetClusters()
+    const response = await fetch(`${API_BASE}/clusters`)
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Failed to get clusters')
+    return data
   }
 
   async toggleClusterPin(clusterId: string): Promise<void> {
-    return window.go.main.App.ToggleClusterPin(clusterId)
+    // Not implemented in HTTP API yet
+    console.warn('toggleClusterPin not implemented')
   }
 
   async addResourceWatcher(request: ResourceWatchRequest): Promise<void> {
-    return window.go.main.App.AddResourceWatcher(
-      request.clusterId,
-      request.group,
-      request.version,
-      request.resource,
-      request.namespace || ''
-    )
+    // Not implemented in HTTP API yet - resources are watched via scheduler aggregation
+    console.warn('addResourceWatcher not implemented')
   }
 
   async removeResourceWatcher(request: Omit<ResourceWatchRequest, 'namespace'>): Promise<void> {
-    return window.go.main.App.RemoveResourceWatcher(
-      request.clusterId,
-      request.group,
-      request.version,
-      request.resource
-    )
+    // Not implemented in HTTP API yet
+    console.warn('removeResourceWatcher not implemented')
   }
 
   async getResourceTypes(clusterId: string): Promise<GroupVersionResource[]> {
-    return window.go.main.App.GetResourceTypes(clusterId)
+    // Not implemented in HTTP API yet
+    console.warn('getResourceTypes not implemented')
+    return []
   }
 
   async loadKubeconfigFromFile(filePath: string): Promise<string> {
-    return window.go.main.App.LoadKubeconfigFromFile(filePath)
+    // Not implemented in HTTP API yet
+    console.warn('loadKubeconfigFromFile not implemented')
+    return ''
   }
 
   async saveKubeconfigToFile(content: string, fileName: string): Promise<string> {
-    return window.go.main.App.SaveKubeconfigToFile(content, fileName)
+    // Not implemented in HTTP API yet
+    console.warn('saveKubeconfigToFile not implemented')
+    return ''
   }
 
   async getKubeconfigFiles(): Promise<string[]> {
-    return window.go.main.App.GetKubeconfigFiles()
+    // Not implemented in HTTP API yet
+    console.warn('getKubeconfigFiles not implemented')
+    return []
   }
 
   async watchDefaultKubeconfig(): Promise<void> {
-    return window.go.main.App.WatchDefaultKubeconfig()
+    // Not implemented in HTTP API yet
+    console.warn('watchDefaultKubeconfig not implemented')
   }
 
+  // Scheduler aggregation methods
+  async startSchedulerAggregation(request: SchedulerAggregationRequest): Promise<void> {
+    const response = await fetch(`${API_BASE}/scheduler/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.error || 'Failed to start scheduler aggregation')
+    }
+  }
+
+  async stopSchedulerAggregation(clusterId: string): Promise<void> {
+    const response = await fetch(`${API_BASE}/scheduler/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clusterId })
+    })
+    if (!response.ok) {
+      const data = await response.json()
+      throw new Error(data.error || 'Failed to stop scheduler aggregation')
+    }
+  }
+
+  async getSchedulerSnapshot(clusterId: string): Promise<SchedulerSnapshot> {
+    const response = await fetch(`${API_BASE}/scheduler/snapshot/${clusterId}`)
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Failed to get scheduler snapshot')
+    return data
+  }
+
+  // Event listeners using WebSocket
   onClusterAdded(callback: (cluster: ClusterInfo) => void): () => void {
-    return this.addEventListener('cluster:added', callback)
+    return wsManager.on('cluster:added', callback)
   }
 
   onClusterRemoved(callback: (clusterId: string) => void): () => void {
-    return this.addEventListener('cluster:removed', callback)
+    return wsManager.on('cluster:removed', callback)
   }
 
   onClusterUpdated(callback: (cluster: ClusterInfo) => void): () => void {
-    return this.addEventListener('cluster:updated', callback)
+    return wsManager.on('cluster:updated', callback)
   }
 
   onResourceEvent(callback: (event: ResourceEvent) => void): () => void {
-    return this.addEventListener('resource:event', callback)
+    return wsManager.on('resource:event', callback)
   }
 
-  private addEventListener(eventName: string, callback: Function): () => void {
-    if (!this.eventListeners.has(eventName)) {
-      this.eventListeners.set(eventName, new Set())
-      EventsOn(eventName, (data: any) => {
-        const listeners = this.eventListeners.get(eventName)
-        if (listeners) {
-          listeners.forEach(listener => listener(data))
-        }
-      })
-    }
+  // Scheduler event listeners
+  onSchedulerSnapshot(callback: (snapshot: SchedulerSnapshot) => void): () => void {
+    return wsManager.on('scheduler:snapshot', callback)
+  }
 
-    const listeners = this.eventListeners.get(eventName)!
-    listeners.add(callback)
+  onSchedulerDelta(callback: (delta: any) => void): () => void {
+    return wsManager.on('scheduler:delta', callback)
+  }
 
-    return () => {
-      listeners.delete(callback)
-      if (listeners.size === 0) {
-        this.eventListeners.delete(eventName)
-        EventsOff(eventName)
-      }
-    }
+  onSchedulerWarning(callback: (warning: any) => void): () => void {
+    return wsManager.on('scheduler:warning', callback)
   }
 
   get pods() {

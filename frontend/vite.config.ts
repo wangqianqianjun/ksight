@@ -51,4 +51,14 @@ export default defineConfig({
   optimizeDeps: {
     include: ['vue', 'pinia', 'vue-router', 'vue-i18n'],
   },
+  // Proxy API requests to Go backend
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        ws: true, // Enable WebSocket proxy
+      },
+    },
+  },
 })

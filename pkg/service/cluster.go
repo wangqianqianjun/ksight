@@ -21,11 +21,11 @@ type EventEmitter interface {
 
 // WailsEventEmitter implements EventEmitter using Wails runtime
 type WailsEventEmitter struct {
-	ctx context.Context
+	Ctx context.Context
 }
 
 func (w *WailsEventEmitter) Emit(event string, data any) {
-	runtime.EventsEmit(w.ctx, event, data)
+	runtime.EventsEmit(w.Ctx, event, data)
 }
 
 // MockEventEmitter implements EventEmitter for testing
@@ -39,18 +39,22 @@ func (m *MockEventEmitter) Emit(event string, data any) {
 func detectEnvironment(ctx context.Context) EventEmitter {
 	// Check if we're in a Wails context by looking for specific context values
 	if ctx.Value("wails") != nil {
-		return &WailsEventEmitter{ctx: ctx}
+		return &WailsEventEmitter{Ctx: ctx}
 	}
 	// Default to mock for test environments
 	return &MockEventEmitter{}
 }
 
+// ResourceEventHandler is a callback for resource events
+type ResourceEventHandler func(event informer.Event)
+
 // ClusterService handles cluster management and resource watching
 type ClusterService struct {
-	ctx             context.Context
-	informerManager *informer.InformerManager
-	dataDir         string
-	eventEmitter    EventEmitter
+	ctx               context.Context
+	informerManager   *informer.InformerManager
+	dataDir           string
+	eventEmitter      EventEmitter
+	resourceHandlers  []ResourceEventHandler
 }
 
 // ClusterInfo represents cluster information for frontend
@@ -81,9 +85,10 @@ func NewClusterService(ctx context.Context) *ClusterService {
 	os.MkdirAll(dataDir, 0755)
 
 	cs := &ClusterService{
-		ctx:          ctx,
-		dataDir:      dataDir,
-		eventEmitter: detectEnvironment(ctx),
+		ctx:              ctx,
+		dataDir:          dataDir,
+		eventEmitter:     detectEnvironment(ctx),
+		resourceHandlers: make([]ResourceEventHandler, 0),
 	}
 
 	// Create informer manager with event handler
@@ -92,11 +97,20 @@ func NewClusterService(ctx context.Context) *ClusterService {
 		func(event informer.Event) {
 			// Emit event to frontend
 			cs.eventEmitter.Emit("resource:event", event)
+			// Call all registered resource handlers
+			for _, handler := range cs.resourceHandlers {
+				handler(event)
+			}
 		},
 	)
 
 	cs.informerManager = manager
 	return cs
+}
+
+// RegisterResourceHandler adds a handler that will be called for all resource events
+func (cs *ClusterService) RegisterResourceHandler(handler ResourceEventHandler) {
+	cs.resourceHandlers = append(cs.resourceHandlers, handler)
 }
 
 // AddCluster adds a new cluster connection
@@ -213,7 +227,16 @@ func (cs *ClusterService) RemoveResourceWatcher(request ResourceWatchRequest) er
 }
 
 // LoadKubeconfigFromFile loads kubeconfig from file path
+// If filePath is empty, uses the default kubeconfig location (~/.kube/config)
 func (cs *ClusterService) LoadKubeconfigFromFile(filePath string) (string, error) {
+	if filePath == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		filePath = filepath.Join(homeDir, ".kube", "config")
+	}
+
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read kubeconfig file: %w", err)
