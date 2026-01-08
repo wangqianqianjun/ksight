@@ -202,4 +202,5 @@ debug network policy，net topology, network tracing flows and commands etc.
 - GPU Scheduling Vision: ./gpu-scheduling-visualization.md
 - GPU Scheduling Backend: ./gpu-scheduling-backend.md
 - GPU Scheduling Frontend: ./gpu-scheduling-frontend.md
+- AI Chat & Skills: ./ai-chat-skills.md
 - UX System: ../ux/application-ux.md
