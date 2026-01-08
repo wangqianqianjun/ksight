@@ -5,7 +5,7 @@
     @dblclick="handleTitlebarDoubleClick"
   >
     <!-- Cluster Tabs Container -->
-    <div class="flex-1 flex items-center h-full min-w-0 pl-4">
+    <div class="flex-1 flex items-center h-full min-w-0" :class="isMac ? 'pl-20' : 'pl-4'">
       <ClusterTabs 
         :tabs="tabs" 
         @set-active-tab="setActiveTab"
@@ -29,7 +29,7 @@
       </button>
 
       <!-- Window Controls -->
-      <div class="flex items-center pl-2 border-l border-gray-200/60 dark:border-gray-700/60">
+      <div v-if="!isMac" class="flex items-center pl-2 border-l border-gray-200/60 dark:border-gray-700/60">
         <button
           @click="minimiseWindow"
           class="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
@@ -57,15 +57,25 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { Settings, Minus, Square, X } from 'lucide-vue-next'
 import ClusterTabs from '@/app/frame/ClusterTabs.vue'
 import ThemeToggle from '@/app/frame/ThemeToggle.vue'
 import type { Tab } from '@/app/frame/ClusterTabs.vue'
 import { useClusterDialog } from '@/shared/composables/useClusterDialog'
-import { WindowMinimise, WindowToggleMaximise, Quit } from '@/wailsjs/runtime/runtime'
+import { Environment, WindowMinimise, WindowToggleMaximise, Quit } from '@/wailsjs/runtime/runtime'
 
 const { open: openClusterDialog } = useClusterDialog()
+const isMac = ref(false)
+
+onMounted(async () => {
+  try {
+    const env = await Environment()
+    isMac.value = env.platform === 'darwin'
+  } catch {
+    isMac.value = false
+  }
+})
 
 // Default icon component for tabs
 const DefaultIcon = {
