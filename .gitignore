@@ -27,3 +27,7 @@ bin
 # Local notes
 agents.md
 wiki/
+
+# Local dev artifacts
+.wails-dev.pid
+wails-dev.log

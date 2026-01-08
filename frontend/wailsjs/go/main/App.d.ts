@@ -12,11 +12,17 @@ export function GetClusters():Promise<Record<string, service.ClusterInfo>>;
 
 export function GetKubeconfigFiles():Promise<Array<string>>;
 
+export function GetNodes(arg1:string):Promise<Array<Record<string, any>>>;
+
+export function GetPods(arg1:string,arg2:string):Promise<Array<Record<string, any>>>;
+
 export function GetResourceTypes(arg1:string):Promise<Array<schema.GroupVersionResource>>;
 
 export function GetSchedulerSnapshot(arg1:string):Promise<scheduler.SchedulerSnapshot>;
 
 export function Greet(arg1:string):Promise<string>;
+
+export function LoadDefaultKubeconfig():Promise<string>;
 
 export function LoadKubeconfigFromFile(arg1:string):Promise<string>;
 

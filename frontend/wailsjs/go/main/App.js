@@ -18,6 +18,14 @@ export function GetKubeconfigFiles() {
   return window['go']['main']['App']['GetKubeconfigFiles']();
 }
 
+export function GetNodes(arg1) {
+  return window['go']['main']['App']['GetNodes'](arg1);
+}
+
+export function GetPods(arg1, arg2) {
+  return window['go']['main']['App']['GetPods'](arg1, arg2);
+}
+
 export function GetResourceTypes(arg1) {
   return window['go']['main']['App']['GetResourceTypes'](arg1);
 }
@@ -28,6 +36,10 @@ export function GetSchedulerSnapshot(arg1) {
 
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
+}
+
+export function LoadDefaultKubeconfig() {
+  return window['go']['main']['App']['LoadDefaultKubeconfig']();
 }
 
 export function LoadKubeconfigFromFile(arg1) {

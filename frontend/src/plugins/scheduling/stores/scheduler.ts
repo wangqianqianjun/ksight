@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
-import { k8s, wsManager } from '@/lib/k8s-sdk'
+import { k8s } from '@/lib/k8s-sdk'
 import type {
   SchedulerSnapshot,
   SchedulerDelta,
@@ -98,14 +98,14 @@ export const useSchedulerStore = defineStore('scheduler', () => {
   }
 
   function subscribeToEvents() {
-    unsubSnapshot = wsManager.on('scheduler:snapshot', (data: SchedulerSnapshot) => {
+    unsubSnapshot = k8s.onSchedulerSnapshot((data: SchedulerSnapshot) => {
       if (data?.clusterId === clusterId.value) {
         snapshot.value = data
         lastSeq.value = data.seq
       }
     })
 
-    unsubDelta = wsManager.on('scheduler:delta', (data: SchedulerDelta) => {
+    unsubDelta = k8s.onSchedulerDelta((data: SchedulerDelta) => {
       if (data?.clusterId === clusterId.value) {
         // Check for seq continuity
         if (data.seq !== lastSeq.value + 1) {
@@ -119,7 +119,7 @@ export const useSchedulerStore = defineStore('scheduler', () => {
       }
     })
 
-    unsubWarning = wsManager.on('scheduler:warning', (data: SchedulerWarning) => {
+    unsubWarning = k8s.onSchedulerWarning((data: SchedulerWarning) => {
       if (data?.clusterId === clusterId.value) {
         warnings.value.push(data)
         // Keep only last 100 warnings
