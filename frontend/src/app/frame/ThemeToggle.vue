@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { Sun, Moon, Monitor } from 'lucide-vue-next'
+import { WindowSetSystemDefaultTheme, WindowSetLightTheme, WindowSetDarkTheme } from '@/wailsjs/runtime/runtime'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -43,7 +44,7 @@ const nextTheme = computed(() => {
 
 const applyTheme = (theme: Theme) => {
   const html = document.documentElement
-  
+
   if (theme === 'system') {
     // Remove explicit theme classes and let system preference take over
     html.classList.remove('light', 'dark')
@@ -53,9 +54,15 @@ const applyTheme = (theme: Theme) => {
     } else {
       html.classList.add('light')
     }
+    WindowSetSystemDefaultTheme()
   } else {
     html.classList.remove('light', 'dark', 'system')
     html.classList.add(theme)
+    if (theme === 'dark') {
+      WindowSetDarkTheme()
+    } else {
+      WindowSetLightTheme()
+    }
   }
 }
 

@@ -1,4 +1,5 @@
 import type { SchedulerAggregationRequest, SchedulerSnapshot } from '@/plugins/scheduling/types'
+import { EventsOn } from '@/wailsjs/runtime/runtime'
 
 // API base URL - will be proxied by Vite in development
 const API_BASE = '/api'
@@ -37,6 +38,55 @@ export interface ResourceEvent {
   object: any
   oldObject?: any
   timestamp: string
+}
+
+export interface NodeSummary {
+  name: string
+  roles: string
+  version: string
+  ready: boolean
+  age: string
+  unschedulable: boolean
+}
+
+export interface PodSummary {
+  name: string
+  namespace: string
+  nodeName: string
+  phase: string
+  age: string
+}
+
+type BackendEvent =
+  | 'cluster:added'
+  | 'cluster:removed'
+  | 'cluster:updated'
+  | 'resource:event'
+  | 'watcher:added'
+  | 'watcher:removed'
+  | 'scheduler:snapshot'
+  | 'scheduler:delta'
+  | 'scheduler:warning'
+
+interface BackendAdapter {
+  addCluster(name: string, kubeconfig: string, context: string): Promise<string>
+  removeCluster(clusterId: string): Promise<void>
+  getClusters(): Promise<Record<string, ClusterInfo>>
+  toggleClusterPin(clusterId: string): Promise<void>
+  addResourceWatcher(request: ResourceWatchRequest): Promise<void>
+  removeResourceWatcher(request: Omit<ResourceWatchRequest, 'namespace'>): Promise<void>
+  getResourceTypes(clusterId: string): Promise<GroupVersionResource[]>
+  loadKubeconfigFromFile(filePath: string): Promise<string>
+  saveKubeconfigToFile(content: string, fileName: string): Promise<string>
+  getKubeconfigFiles(): Promise<string[]>
+  watchDefaultKubeconfig(): Promise<void>
+  startSchedulerAggregation(request: SchedulerAggregationRequest): Promise<void>
+  stopSchedulerAggregation(clusterId: string): Promise<void>
+  getSchedulerSnapshot(clusterId: string): Promise<SchedulerSnapshot>
+  getNodes(clusterId: string): Promise<NodeSummary[]>
+  getPods(clusterId: string, namespace?: string): Promise<PodSummary[]>
+  loadDefaultKubeconfig(): Promise<string>
+  on(event: BackendEvent, callback: (data: any) => void): () => void
 }
 
 // WebSocket event message
@@ -136,152 +186,295 @@ class WebSocketManager {
   }
 }
 
-// Global WebSocket manager
-export const wsManager = new WebSocketManager()
+const isWailsAvailable = () => {
+  return typeof window !== 'undefined' && !!window.go?.main?.App
+}
 
-// K8s SDK Class using HTTP API
+const getWailsApp = () => {
+  const app = window.go?.main?.App
+  if (!app) {
+    throw new Error('Wails bindings not available')
+  }
+  return app
+}
+
+const createWailsAdapter = (): BackendAdapter => ({
+  addCluster: (name, kubeconfig, context) => getWailsApp().AddCluster(name, kubeconfig, context),
+  removeCluster: (clusterId) => getWailsApp().RemoveCluster(clusterId),
+  getClusters: () => getWailsApp().GetClusters(),
+  toggleClusterPin: (clusterId) => getWailsApp().ToggleClusterPin(clusterId),
+  addResourceWatcher: (request) =>
+    getWailsApp().AddResourceWatcher(
+      request.clusterId,
+      request.group,
+      request.version,
+      request.resource,
+      request.namespace ?? ''
+    ),
+  removeResourceWatcher: (request) =>
+    getWailsApp().RemoveResourceWatcher(
+      request.clusterId,
+      request.group,
+      request.version,
+      request.resource
+    ),
+  getResourceTypes: (clusterId) => getWailsApp().GetResourceTypes(clusterId),
+  loadKubeconfigFromFile: (filePath) => getWailsApp().LoadKubeconfigFromFile(filePath),
+  saveKubeconfigToFile: (content, fileName) => getWailsApp().SaveKubeconfigToFile(content, fileName),
+  getKubeconfigFiles: () => getWailsApp().GetKubeconfigFiles(),
+  watchDefaultKubeconfig: () => getWailsApp().WatchDefaultKubeconfig(),
+  startSchedulerAggregation: (request) => getWailsApp().StartSchedulerAggregation(request),
+  stopSchedulerAggregation: (clusterId) => getWailsApp().StopSchedulerAggregation(clusterId),
+  getSchedulerSnapshot: (clusterId) => getWailsApp().GetSchedulerSnapshot(clusterId),
+  getNodes: (clusterId) => getWailsApp().GetNodes(clusterId),
+  getPods: (clusterId, namespace) => getWailsApp().GetPods(clusterId, namespace ?? ''),
+  loadDefaultKubeconfig: () => getWailsApp().LoadDefaultKubeconfig(),
+  on: (event, callback) => EventsOn(event, (payload: any) => callback(payload)),
+})
+
+const createHttpAdapter = (): BackendAdapter => {
+  const wsManager = new WebSocketManager()
+
+  if (typeof window !== 'undefined') {
+    wsManager.connect()
+  }
+
+  return {
+    async addCluster(name: string, kubeconfig: string, context: string = ''): Promise<string> {
+      const response = await fetch(`${API_BASE}/clusters`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, kubeconfig, context })
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to add cluster')
+      return data.clusterId
+    },
+
+    async removeCluster(clusterId: string): Promise<void> {
+      const response = await fetch(`${API_BASE}/clusters/${clusterId}`, {
+        method: 'DELETE'
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to remove cluster')
+      }
+    },
+
+    async getClusters(): Promise<Record<string, ClusterInfo>> {
+      const response = await fetch(`${API_BASE}/clusters`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to get clusters')
+      return data
+    },
+
+    async toggleClusterPin(clusterId: string): Promise<void> {
+      // Not implemented in HTTP API yet
+      console.warn('toggleClusterPin not implemented')
+    },
+
+    async addResourceWatcher(request: ResourceWatchRequest): Promise<void> {
+      // Not implemented in HTTP API yet - resources are watched via scheduler aggregation
+      console.warn('addResourceWatcher not implemented')
+    },
+
+    async removeResourceWatcher(request: Omit<ResourceWatchRequest, 'namespace'>): Promise<void> {
+      // Not implemented in HTTP API yet
+      console.warn('removeResourceWatcher not implemented')
+    },
+
+    async getResourceTypes(clusterId: string): Promise<GroupVersionResource[]> {
+      // Not implemented in HTTP API yet
+      console.warn('getResourceTypes not implemented')
+      return []
+    },
+
+    async loadKubeconfigFromFile(filePath: string): Promise<string> {
+      // Not implemented in HTTP API yet
+      console.warn('loadKubeconfigFromFile not implemented')
+      return ''
+    },
+
+    async saveKubeconfigToFile(content: string, fileName: string): Promise<string> {
+      // Not implemented in HTTP API yet
+      console.warn('saveKubeconfigToFile not implemented')
+      return ''
+    },
+
+    async getKubeconfigFiles(): Promise<string[]> {
+      // Not implemented in HTTP API yet
+      console.warn('getKubeconfigFiles not implemented')
+      return []
+    },
+
+    async watchDefaultKubeconfig(): Promise<void> {
+      // Not implemented in HTTP API yet
+      console.warn('watchDefaultKubeconfig not implemented')
+    },
+
+    async startSchedulerAggregation(request: SchedulerAggregationRequest): Promise<void> {
+      const response = await fetch(`${API_BASE}/scheduler/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request)
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to start scheduler aggregation')
+      }
+    },
+
+    async stopSchedulerAggregation(clusterId: string): Promise<void> {
+      const response = await fetch(`${API_BASE}/scheduler/stop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clusterId })
+      })
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to stop scheduler aggregation')
+      }
+    },
+
+    async getSchedulerSnapshot(clusterId: string): Promise<SchedulerSnapshot> {
+      const response = await fetch(`${API_BASE}/scheduler/snapshot/${clusterId}`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to get scheduler snapshot')
+      return data
+    },
+
+    async getNodes(clusterId: string): Promise<NodeSummary[]> {
+      const response = await fetch(`${API_BASE}/clusters/${clusterId}/nodes`)
+      if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(errText || 'Failed to get nodes')
+      }
+      return response.json()
+    },
+
+    async getPods(clusterId: string, namespace?: string): Promise<PodSummary[]> {
+      const query = namespace ? `?namespace=${encodeURIComponent(namespace)}` : ''
+      const response = await fetch(`${API_BASE}/clusters/${clusterId}/pods${query}`)
+      if (!response.ok) {
+        const errText = await response.text()
+        throw new Error(errText || 'Failed to get pods')
+      }
+      return response.json()
+    },
+
+    async loadDefaultKubeconfig(): Promise<string> {
+      const response = await fetch(`${API_BASE}/clusters/load-default`, { method: 'POST' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to load kubeconfig')
+      return data.clusterId
+    },
+
+    on: (event, callback) => wsManager.on(event, callback),
+  }
+}
+
 export class K8sSDK {
-  private eventListeners: Map<string, Set<Function>> = new Map()
+  private adapter: BackendAdapter
 
-  constructor() {
-    // Connect WebSocket when SDK is created
-    if (typeof window !== 'undefined') {
-      wsManager.connect()
-    }
+  constructor(adapter?: BackendAdapter) {
+    this.adapter = adapter ?? (isWailsAvailable() ? createWailsAdapter() : createHttpAdapter())
   }
 
-  async addCluster(name: string, kubeconfig: string, context: string = ''): Promise<string> {
-    const response = await fetch(`${API_BASE}/clusters`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, kubeconfig, context })
-    })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Failed to add cluster')
-    return data.clusterId
+  addCluster(name: string, kubeconfig: string, context: string = ''): Promise<string> {
+    return this.adapter.addCluster(name, kubeconfig, context)
   }
 
-  async removeCluster(clusterId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/clusters/${clusterId}`, {
-      method: 'DELETE'
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || 'Failed to remove cluster')
-    }
+  removeCluster(clusterId: string): Promise<void> {
+    return this.adapter.removeCluster(clusterId)
   }
 
-  async getClusters(): Promise<Record<string, ClusterInfo>> {
-    const response = await fetch(`${API_BASE}/clusters`)
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Failed to get clusters')
-    return data
+  getClusters(): Promise<Record<string, ClusterInfo>> {
+    return this.adapter.getClusters()
   }
 
-  async toggleClusterPin(clusterId: string): Promise<void> {
-    // Not implemented in HTTP API yet
-    console.warn('toggleClusterPin not implemented')
+  toggleClusterPin(clusterId: string): Promise<void> {
+    return this.adapter.toggleClusterPin(clusterId)
   }
 
-  async addResourceWatcher(request: ResourceWatchRequest): Promise<void> {
-    // Not implemented in HTTP API yet - resources are watched via scheduler aggregation
-    console.warn('addResourceWatcher not implemented')
+  addResourceWatcher(request: ResourceWatchRequest): Promise<void> {
+    return this.adapter.addResourceWatcher(request)
   }
 
-  async removeResourceWatcher(request: Omit<ResourceWatchRequest, 'namespace'>): Promise<void> {
-    // Not implemented in HTTP API yet
-    console.warn('removeResourceWatcher not implemented')
+  removeResourceWatcher(request: Omit<ResourceWatchRequest, 'namespace'>): Promise<void> {
+    return this.adapter.removeResourceWatcher(request)
   }
 
-  async getResourceTypes(clusterId: string): Promise<GroupVersionResource[]> {
-    // Not implemented in HTTP API yet
-    console.warn('getResourceTypes not implemented')
-    return []
+  getResourceTypes(clusterId: string): Promise<GroupVersionResource[]> {
+    return this.adapter.getResourceTypes(clusterId)
   }
 
-  async loadKubeconfigFromFile(filePath: string): Promise<string> {
-    // Not implemented in HTTP API yet
-    console.warn('loadKubeconfigFromFile not implemented')
-    return ''
+  loadKubeconfigFromFile(filePath: string): Promise<string> {
+    return this.adapter.loadKubeconfigFromFile(filePath)
   }
 
-  async saveKubeconfigToFile(content: string, fileName: string): Promise<string> {
-    // Not implemented in HTTP API yet
-    console.warn('saveKubeconfigToFile not implemented')
-    return ''
+  saveKubeconfigToFile(content: string, fileName: string): Promise<string> {
+    return this.adapter.saveKubeconfigToFile(content, fileName)
   }
 
-  async getKubeconfigFiles(): Promise<string[]> {
-    // Not implemented in HTTP API yet
-    console.warn('getKubeconfigFiles not implemented')
-    return []
+  getKubeconfigFiles(): Promise<string[]> {
+    return this.adapter.getKubeconfigFiles()
   }
 
-  async watchDefaultKubeconfig(): Promise<void> {
-    // Not implemented in HTTP API yet
-    console.warn('watchDefaultKubeconfig not implemented')
+  watchDefaultKubeconfig(): Promise<void> {
+    return this.adapter.watchDefaultKubeconfig()
   }
 
-  // Scheduler aggregation methods
-  async startSchedulerAggregation(request: SchedulerAggregationRequest): Promise<void> {
-    const response = await fetch(`${API_BASE}/scheduler/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(request)
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || 'Failed to start scheduler aggregation')
-    }
+  startSchedulerAggregation(request: SchedulerAggregationRequest): Promise<void> {
+    return this.adapter.startSchedulerAggregation(request)
   }
 
-  async stopSchedulerAggregation(clusterId: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/scheduler/stop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clusterId })
-    })
-    if (!response.ok) {
-      const data = await response.json()
-      throw new Error(data.error || 'Failed to stop scheduler aggregation')
-    }
+  stopSchedulerAggregation(clusterId: string): Promise<void> {
+    return this.adapter.stopSchedulerAggregation(clusterId)
   }
 
-  async getSchedulerSnapshot(clusterId: string): Promise<SchedulerSnapshot> {
-    const response = await fetch(`${API_BASE}/scheduler/snapshot/${clusterId}`)
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error || 'Failed to get scheduler snapshot')
-    return data
+  getSchedulerSnapshot(clusterId: string): Promise<SchedulerSnapshot> {
+    return this.adapter.getSchedulerSnapshot(clusterId)
   }
 
-  // Event listeners using WebSocket
+  getNodes(clusterId: string): Promise<NodeSummary[]> {
+    return this.adapter.getNodes(clusterId)
+  }
+
+  getPods(clusterId: string, namespace?: string): Promise<PodSummary[]> {
+    return this.adapter.getPods(clusterId, namespace)
+  }
+
+  loadDefaultKubeconfig(): Promise<string> {
+    return this.adapter.loadDefaultKubeconfig()
+  }
+
   onClusterAdded(callback: (cluster: ClusterInfo) => void): () => void {
-    return wsManager.on('cluster:added', callback)
+    return this.adapter.on('cluster:added', callback)
   }
 
   onClusterRemoved(callback: (clusterId: string) => void): () => void {
-    return wsManager.on('cluster:removed', callback)
+    return this.adapter.on('cluster:removed', callback)
   }
 
   onClusterUpdated(callback: (cluster: ClusterInfo) => void): () => void {
-    return wsManager.on('cluster:updated', callback)
+    return this.adapter.on('cluster:updated', callback)
   }
 
   onResourceEvent(callback: (event: ResourceEvent) => void): () => void {
-    return wsManager.on('resource:event', callback)
+    return this.adapter.on('resource:event', callback)
   }
 
-  // Scheduler event listeners
+  // Scheduler event listeners (HTTP path only currently)
   onSchedulerSnapshot(callback: (snapshot: SchedulerSnapshot) => void): () => void {
-    return wsManager.on('scheduler:snapshot', callback)
+    return this.adapter.on('scheduler:snapshot', callback)
   }
 
   onSchedulerDelta(callback: (delta: any) => void): () => void {
-    return wsManager.on('scheduler:delta', callback)
+    return this.adapter.on('scheduler:delta', callback)
   }
 
   onSchedulerWarning(callback: (warning: any) => void): () => void {
-    return wsManager.on('scheduler:warning', callback)
+    return this.adapter.on('scheduler:warning', callback)
   }
 
   get pods() {

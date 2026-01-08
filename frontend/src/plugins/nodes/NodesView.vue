@@ -153,6 +153,7 @@ import {
 } from 'lucide-vue-next'
 import { useClusterStore } from '@/shared/stores/cluster'
 import { useClusterDialog } from '@/shared/composables/useClusterDialog'
+import { k8s } from '@/lib/k8s-sdk'
 
 const clusterStore = useClusterStore()
 const { open: openClusterDialog } = useClusterDialog()
@@ -169,13 +170,7 @@ async function fetchNodes() {
 
   loading.value = true
   try {
-    const response = await fetch(`/api/clusters/${clusterStore.activeClusterId}/nodes`)
-    if (response.ok) {
-      nodes.value = await response.json() || []
-    } else {
-      console.error('Failed to fetch nodes:', await response.text())
-      nodes.value = []
-    }
+    nodes.value = await k8s.getNodes(clusterStore.activeClusterId)
   } catch (e) {
     console.error('Failed to fetch nodes:', e)
     nodes.value = []

@@ -119,6 +119,7 @@ import { Label } from '@/components/ui/label'
 import { Server, RefreshCw, Inbox, CheckCircle, Plug, Upload } from 'lucide-vue-next'
 import { useClusterDialog } from '@/shared/composables/useClusterDialog'
 import { useClusterStore } from '@/shared/stores/cluster'
+import { k8s } from '@/lib/k8s-sdk'
 
 const { isOpen, close } = useClusterDialog()
 const clusterStore = useClusterStore()
@@ -171,17 +172,10 @@ async function loadDefaultKubeconfig() {
   loadingDefault.value = true
   error.value = null
   try {
-    const response = await fetch('/api/clusters/load-default', { method: 'POST' })
-    if (response.ok) {
-      const result = await response.json()
-      // Reload clusters to show the new one
-      await clusterStore.loadClusters()
-      clusterStore.setActiveCluster(result.clusterId)
-      close()
-    } else {
-      const errText = await response.text()
-      error.value = `Failed to load kubeconfig: ${errText}`
-    }
+    const clusterId = await k8s.loadDefaultKubeconfig()
+    await clusterStore.loadClusters()
+    clusterStore.setActiveCluster(clusterId)
+    close()
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {

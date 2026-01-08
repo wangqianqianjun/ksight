@@ -1,6 +1,8 @@
 <template>
   <div
     class="title-bar flex items-center bg-gray-50/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200/50 dark:border-gray-700/50 h-9"
+    style="--wails-draggable: drag"
+    @dblclick="handleTitlebarDoubleClick"
   >
     <!-- Cluster Tabs Container -->
     <div class="flex-1 flex items-center h-full min-w-0 pl-4">
@@ -13,7 +15,7 @@
     </div>
 
     <!-- Right Side Actions -->
-    <div class="flex items-center h-full pr-4 space-x-2">
+    <div class="flex items-center h-full pr-4 space-x-2" style="--wails-draggable: no-drag" data-no-drag>
       <!-- Theme Toggle -->
       <ThemeToggle />
       
@@ -25,17 +27,43 @@
       >
         <Settings :size="16" class="transition-transform duration-200 group-hover:rotate-45" />
       </button>
+
+      <!-- Window Controls -->
+      <div class="flex items-center pl-2 border-l border-gray-200/60 dark:border-gray-700/60">
+        <button
+          @click="minimiseWindow"
+          class="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          title="Minimize"
+        >
+          <Minus :size="14" />
+        </button>
+        <button
+          @click="toggleMaximise"
+          class="w-8 h-8 flex items-center justify-center rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          title="Maximize or restore"
+        >
+          <Square :size="12" />
+        </button>
+        <button
+          @click="closeWindow"
+          class="w-8 h-8 flex items-center justify-center rounded-md hover:bg-red-500/15 text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+          title="Close"
+        >
+          <X :size="14" />
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { Settings } from 'lucide-vue-next'
+import { Settings, Minus, Square, X } from 'lucide-vue-next'
 import ClusterTabs from '@/app/frame/ClusterTabs.vue'
 import ThemeToggle from '@/app/frame/ThemeToggle.vue'
 import type { Tab } from '@/app/frame/ClusterTabs.vue'
 import { useClusterDialog } from '@/shared/composables/useClusterDialog'
+import { WindowMinimise, WindowToggleMaximise, Quit } from '@/wailsjs/runtime/runtime'
 
 const { open: openClusterDialog } = useClusterDialog()
 
@@ -85,6 +113,32 @@ const closeTab = (tabId: string) => {
 const addTab = () => {
   // Open cluster connection dialog instead of adding empty tab
   openClusterDialog()
+}
+
+const minimiseWindow = () => {
+  WindowMinimise()
+}
+
+const toggleMaximise = () => {
+  WindowToggleMaximise()
+}
+
+const handleTitlebarDoubleClick = (event: MouseEvent) => {
+  const target = event.target as HTMLElement | null
+  if (!target) {
+    toggleMaximise()
+    return
+  }
+
+  if (target.closest('button, a, input, select, textarea, [data-no-drag]')) {
+    return
+  }
+
+  toggleMaximise()
+}
+
+const closeWindow = () => {
+  Quit()
 }
 
 // Settings handler
