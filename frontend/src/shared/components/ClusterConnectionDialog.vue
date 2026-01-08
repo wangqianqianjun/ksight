@@ -41,7 +41,10 @@
                 :class="{ 'border-primary bg-primary/5': selectedCluster === cluster.id }"
                 @click="selectedCluster = cluster.id"
               >
-                <div class="w-2 h-2 rounded-full" :class="cluster.connected ? 'bg-green-500' : 'bg-gray-400'" />
+                <div
+                  class="w-2 h-2 rounded-full"
+                  :class="cluster.status === 'connected' ? 'bg-green-500' : cluster.status === 'error' ? 'bg-red-500' : 'bg-gray-400'"
+                />
                 <Server class="w-4 h-4 text-muted-foreground" />
                 <div class="flex-1">
                   <div class="font-medium text-sm">{{ cluster.name }}</div>
@@ -172,10 +175,15 @@ async function loadDefaultKubeconfig() {
   loadingDefault.value = true
   error.value = null
   try {
-    const clusterId = await k8s.loadDefaultKubeconfig()
-    await clusterStore.loadClusters()
-    clusterStore.setActiveCluster(clusterId)
-    close()
+    connectionMethod.value = 'kubeconfig'
+    const content = await k8s.loadKubeconfigFromFile('')
+    kubeconfig.value = content
+    if (!clusterName.value.trim()) {
+      clusterName.value = 'kubeconfig'
+    }
+    if (!context.value.trim()) {
+      context.value = clusterName.value.trim()
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -196,11 +204,19 @@ async function connect() {
       }
     } else {
       // Add new cluster with kubeconfig
-      await clusterStore.addCluster(
-        clusterName.value.trim(),
-        kubeconfig.value,
-        context.value.trim() || clusterName.value.trim()
-      )
+      const name = clusterName.value.trim()
+      const clusterContext = context.value.trim() || name
+      let kubeconfigSource = kubeconfig.value
+
+      // Persist the kubeconfig locally so it can be reused later (backend can also load by file path).
+      try {
+        const safeFileName = name.replace(/[^a-zA-Z0-9._-]+/g, '_') || 'kubeconfig'
+        kubeconfigSource = await k8s.saveKubeconfigToFile(kubeconfig.value, `${safeFileName}.yaml`)
+      } catch (e) {
+        console.warn('Failed to save kubeconfig to file, falling back to inline content:', e)
+      }
+
+      await clusterStore.addCluster(name, kubeconfigSource, clusterContext)
       close()
     }
   } catch (e) {

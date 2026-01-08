@@ -4,6 +4,25 @@ import { EventsOn } from '@/wailsjs/runtime/runtime'
 // API base URL - will be proxied by Vite in development
 const API_BASE = '/api'
 
+async function readJsonBody(response: Response): Promise<{ json: any | null; text: string }> {
+  const text = await response.text()
+  if (!text) return { json: null, text: '' }
+  try {
+    return { json: JSON.parse(text), text }
+  } catch {
+    return { json: null, text }
+  }
+}
+
+function errorFromResponse(response: Response, json: any | null, text: string): Error {
+  const message =
+    (json && typeof json === 'object' && 'error' in json && typeof json.error === 'string' && json.error) ||
+    text ||
+    `${response.status} ${response.statusText}`.trim() ||
+    'Request failed'
+  return new Error(message)
+}
+
 // Types for cluster management
 export interface ClusterInfo {
   id: string
@@ -246,9 +265,10 @@ const createHttpAdapter = (): BackendAdapter => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, kubeconfig, context })
       })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to add cluster')
-      return data.clusterId
+      const { json, text } = await readJsonBody(response)
+      if (!response.ok) throw errorFromResponse(response, json, text)
+      if (json && typeof json === 'object' && typeof json.clusterId === 'string') return json.clusterId
+      throw new Error('Invalid response from server')
     },
 
     async removeCluster(clusterId: string): Promise<void> {
@@ -256,16 +276,17 @@ const createHttpAdapter = (): BackendAdapter => {
         method: 'DELETE'
       })
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to remove cluster')
+        const { json, text } = await readJsonBody(response)
+        throw errorFromResponse(response, json, text)
       }
     },
 
     async getClusters(): Promise<Record<string, ClusterInfo>> {
       const response = await fetch(`${API_BASE}/clusters`)
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to get clusters')
-      return data
+      const { json, text } = await readJsonBody(response)
+      if (!response.ok) throw errorFromResponse(response, json, text)
+      if (json && typeof json === 'object') return json as Record<string, ClusterInfo>
+      throw new Error('Invalid response from server')
     },
 
     async toggleClusterPin(clusterId: string): Promise<void> {
@@ -319,8 +340,8 @@ const createHttpAdapter = (): BackendAdapter => {
         body: JSON.stringify(request)
       })
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to start scheduler aggregation')
+        const { json, text } = await readJsonBody(response)
+        throw errorFromResponse(response, json, text)
       }
     },
 
@@ -331,16 +352,17 @@ const createHttpAdapter = (): BackendAdapter => {
         body: JSON.stringify({ clusterId })
       })
       if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || 'Failed to stop scheduler aggregation')
+        const { json, text } = await readJsonBody(response)
+        throw errorFromResponse(response, json, text)
       }
     },
 
     async getSchedulerSnapshot(clusterId: string): Promise<SchedulerSnapshot> {
       const response = await fetch(`${API_BASE}/scheduler/snapshot/${clusterId}`)
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to get scheduler snapshot')
-      return data
+      const { json, text } = await readJsonBody(response)
+      if (!response.ok) throw errorFromResponse(response, json, text)
+      if (json) return json as SchedulerSnapshot
+      throw new Error('Invalid response from server')
     },
 
     async getNodes(clusterId: string): Promise<NodeSummary[]> {
@@ -364,9 +386,10 @@ const createHttpAdapter = (): BackendAdapter => {
 
     async loadDefaultKubeconfig(): Promise<string> {
       const response = await fetch(`${API_BASE}/clusters/load-default`, { method: 'POST' })
-      const data = await response.json()
-      if (!response.ok) throw new Error(data.error || 'Failed to load kubeconfig')
-      return data.clusterId
+      const { json, text } = await readJsonBody(response)
+      if (!response.ok) throw errorFromResponse(response, json, text)
+      if (json && typeof json === 'object' && typeof json.clusterId === 'string') return json.clusterId
+      throw new Error('Invalid response from server')
     },
 
     on: (event, callback) => wsManager.on(event, callback),
