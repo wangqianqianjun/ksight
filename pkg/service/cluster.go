@@ -198,6 +198,10 @@ func (cs *ClusterService) AddResourceWatcher(request ResourceWatchRequest) error
 
 	err := cs.informerManager.AddResourceWatcher(request.ClusterID, gvr, request.Namespace)
 	if err != nil {
+		// Ensure frontend gets updated status/lastError.
+		if cluster, ok := cs.GetClusters()[request.ClusterID]; ok {
+			cs.eventEmitter.Emit("cluster:updated", cluster)
+		}
 		return err
 	}
 

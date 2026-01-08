@@ -679,12 +679,14 @@ func (dc *DatabaseCache) LoadResources(clusterID string, gvr schema.GroupVersion
 func (im *InformerManager) testAPIAccess(cluster *ClusterConnection, gvr schema.GroupVersionResource, namespace string) error {
 	// Try to list resources to test permissions
 	listOptions := metav1.ListOptions{Limit: 1}
+	ctx, cancel := context.WithTimeout(im.ctx, 10*time.Second)
+	defer cancel()
 
 	if namespace != "" {
-		_, err := cluster.Client.Resource(gvr).Namespace(namespace).List(context.TODO(), listOptions)
+		_, err := cluster.Client.Resource(gvr).Namespace(namespace).List(ctx, listOptions)
 		return err
 	} else {
-		_, err := cluster.Client.Resource(gvr).List(context.TODO(), listOptions)
+		_, err := cluster.Client.Resource(gvr).List(ctx, listOptions)
 		return err
 	}
 }

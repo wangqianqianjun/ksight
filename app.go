@@ -149,12 +149,14 @@ func (a *App) GetNodes(clusterID string) ([]map[string]any, error) {
 		return nil, fmt.Errorf("cluster ID required")
 	}
 
-	_ = a.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
+	if err := a.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
 		ClusterID: clusterID,
 		Group:     "",
 		Version:   "v1",
 		Resource:  "nodes",
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	nodes, _, err := a.clusterService.LoadInitialData(clusterID, "", "v1", "nodes")
 	if err != nil {
@@ -232,13 +234,15 @@ func (a *App) GetPods(clusterID, namespace string) ([]map[string]any, error) {
 		return nil, fmt.Errorf("cluster ID required")
 	}
 
-	_ = a.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
+	if err := a.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
 		ClusterID: clusterID,
 		Group:     "",
 		Version:   "v1",
 		Resource:  "pods",
 		Namespace: namespace,
-	})
+	}); err != nil {
+		return nil, err
+	}
 
 	pods, _, err := a.clusterService.LoadInitialData(clusterID, "", "v1", "pods")
 	if err != nil {

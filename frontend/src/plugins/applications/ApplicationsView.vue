@@ -73,6 +73,18 @@
         </div>
       </div>
 
+      <!-- Error State -->
+      <div v-else-if="loadError" class="flex items-center justify-center h-full">
+        <div class="text-center max-w-md">
+          <h2 class="text-xl font-semibold mb-2">Failed to load applications</h2>
+          <p class="text-muted-foreground mb-6">{{ loadError }}</p>
+          <div class="flex items-center justify-center gap-3">
+            <Button @click="fetchPods">Retry</Button>
+            <Button variant="outline" @click="openSettings">Open settings</Button>
+          </div>
+        </div>
+      </div>
+
       <!-- Empty State -->
       <div v-else-if="pods.length === 0" class="flex items-center justify-center h-full">
         <div class="text-center max-w-md">
@@ -170,6 +182,7 @@ const clusterStore = useClusterStore()
 const { open: openClusterDialog } = useClusterDialog()
 
 const loading = ref(false)
+const loadError = ref<string | null>(null)
 const pods = ref<any[]>([])
 
 const isConnected = computed(() => clusterStore.activeClusterId !== null)
@@ -185,10 +198,12 @@ async function fetchPods() {
   if (!clusterStore.activeClusterId) return
 
   loading.value = true
+  loadError.value = null
   try {
     pods.value = await k8s.getPods(clusterStore.activeClusterId)
   } catch (e) {
     console.error('Failed to fetch pods:', e)
+    loadError.value = e instanceof Error ? e.message : String(e)
     pods.value = []
   } finally {
     loading.value = false

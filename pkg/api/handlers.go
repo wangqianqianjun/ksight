@@ -161,12 +161,15 @@ func (h *Handler) GetNodes(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure we have a watcher for nodes
-	_ = h.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
+	if err := h.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
 		ClusterID: clusterID,
 		Group:     "",
 		Version:   "v1",
 		Resource:  "nodes",
-	})
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	// Load node data
 	nodes, _, err := h.clusterService.LoadInitialData(clusterID, "", "v1", "nodes")
@@ -256,13 +259,16 @@ func (h *Handler) GetPods(w http.ResponseWriter, r *http.Request) {
 	namespace := r.URL.Query().Get("namespace")
 
 	// First, ensure we have a watcher for pods
-	_ = h.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
+	if err := h.clusterService.AddResourceWatcher(service.ResourceWatchRequest{
 		ClusterID: clusterID,
 		Group:     "",
 		Version:   "v1",
 		Resource:  "pods",
 		Namespace: namespace,
-	})
+	}); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	// Load pod data
 	pods, _, err := h.clusterService.LoadInitialData(clusterID, "", "v1", "pods")
